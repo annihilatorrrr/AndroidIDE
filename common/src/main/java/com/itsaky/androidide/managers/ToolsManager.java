@@ -18,64 +18,129 @@
 package com.itsaky.androidide.managers;
 
 import androidx.annotation.NonNull;
-
 import com.blankj.utilcode.util.FileIOUtils;
 import com.blankj.utilcode.util.FileUtils;
 import com.blankj.utilcode.util.ResourceUtils;
-import com.blankj.utilcode.util.ZipUtils;
 import com.itsaky.androidide.app.BaseApplication;
+import com.itsaky.androidide.app.configuration.IDEBuildConfigProvider;
+import com.itsaky.androidide.app.configuration.IJdkDistributionProvider;
 import com.itsaky.androidide.utils.Environment;
 import com.itsaky.androidide.utils.ILogger;
-
-import org.jetbrains.annotations.Contract;
-
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.util.Arrays;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import kotlin.io.ConstantsKt;
+import kotlin.io.FilesKt;
+import org.jetbrains.annotations.Contract;
 
 public class ToolsManager {
 
-  public static final int LOG_SENDER_VERSION = 2;
-  public static final String KEY_LOG_SENDER_VERSION = "tools_logsenderVersion";
   private static final ILogger LOG = ILogger.newInstance("ToolsManager");
-  public static String ARCH_SPECIFIC_ASSET_DATA_DIR = "data/" + BaseApplication.getArch();
+
   public static String COMMON_ASSET_DATA_DIR = "data/common";
-  private static PreferenceManager prefs;
 
   public static void init(@NonNull BaseApplication app, Runnable onFinish) {
 
-    if (BaseApplication.getArch() == null) {
+    if (!IDEBuildConfigProvider.getInstance().supportsCpuAbi()) {
       LOG.error("Device not supported");
       return;
     }
 
-    prefs = app.getPrefManager();
+    CompletableFuture.runAsync(() -> {
+      // Load installed JDK distributions
+      IJdkDistributionProvider.getInstance().loadDistributions();
 
-    CompletableFuture.runAsync(
-            () -> {
-              writeNoMediaFile();
-              copyBusyboxIfNeeded();
-              extractLogsenderIfNeeded();
-              extractAapt2();
-              extractGradlePlugin();
-              extractToolingApi();
-              extractAndroidJar();
-              writeInitScript();
-              
-              deleteIdeenv();
-            })
-        .whenComplete(
-            (__, error) -> {
-              if (error != null) {
-                LOG.error("Error extracting tools", error);
-              }
+      writeNoMediaFile();
+      extractAapt2();
+      extractToolingApi();
+      extractAndroidJar();
+      extractColorScheme(app);
+      writeInitScript();
 
-              if (onFinish != null) {
-                onFinish.run();
-              }
-            });
+      deleteIdeenv();
+    }).whenComplete((__, error) -> {
+      if (error != null) {
+        LOG.error("Error extracting tools", error);
+      }
+
+      if (onFinish != null) {
+        onFinish.run();
+      }
+    });
   }
-  
+
+  private static void extractColorScheme(final BaseApplication app) {
+    final var defPath = "editor/schemes";
+    final var dir = new File(Environment.ANDROIDIDE_UI, defPath);
+    try {
+      for (final String asset : app.getAssets().list(defPath)) {
+
+        final var prop = new File(dir, asset + "/" + "scheme.prop");
+        if (prop.exists() && !shouldExtractScheme(app, new File(dir, asset),
+            defPath + "/" + asset)) {
+          continue;
+        }
+
+        final File schemeDir = new File(dir, asset);
+        if (schemeDir.exists()) {
+          schemeDir.delete();
+        }
+
+        ResourceUtils.copyFileFromAssets(defPath + "/" + asset, schemeDir.getAbsolutePath());
+      }
+    } catch (IOException e) {
+      LOG.error("Failed to extract color schemes", e);
+    }
+  }
+
+  private static boolean shouldExtractScheme(final BaseApplication app, final File dir,
+      final String path) throws IOException {
+
+    final var schemePropFile = new File(dir, "scheme.prop");
+    if (!schemePropFile.exists()) {
+      return true;
+    }
+
+    final var files = app.getAssets().list(path);
+    if (Arrays.stream(files).noneMatch("scheme.prop"::equals)) {
+      // no scheme.prop file
+      return true;
+    }
+
+    try {
+      final var props = new Properties();
+      Reader reader = new InputStreamReader(app.getAssets().open(path + "/scheme.prop"));
+      props.load(reader);
+      reader.close();
+
+      final var version = Integer.parseInt(props.getProperty("scheme.version", "0"));
+      if (version == 0) {
+        return true;
+      }
+
+      props.clear();
+
+      reader = new FileReader(schemePropFile);
+      props.load(reader);
+      reader.close();
+
+      final var fileVersion = Integer.parseInt(props.getProperty("scheme.version", "0"));
+      if (fileVersion < 0) {
+        return true;
+      }
+
+      return version > fileVersion;
+    } catch (Throwable err) {
+      LOG.error("Failed to read color scheme version for scheme '" + path + "'", err);
+      return false;
+    }
+  }
+
   private static void writeNoMediaFile() {
     final var noMedia = new File(BaseApplication.getBaseInstance().getProjectsDir(), ".nomedia");
     if (!noMedia.exists()) {
@@ -88,11 +153,11 @@ public class ToolsManager {
       }
     }
   }
-  
+
   private static void extractAndroidJar() {
     if (!Environment.ANDROID_JAR.exists()) {
-      ResourceUtils.copyFileFromAssets(
-          getCommonAsset("android.jar"), Environment.ANDROID_JAR.getAbsolutePath());
+      ResourceUtils.copyFileFromAssets(getCommonAsset("android.jar"),
+          Environment.ANDROID_JAR.getAbsolutePath());
     }
   }
 
@@ -100,39 +165,6 @@ public class ToolsManager {
     final var file = new File(Environment.BIN_DIR, "ideenv");
     if (file.exists() && !file.delete()) {
       LOG.warn("Unable to delete", file);
-    }
-  }
-
-  private static void copyBusyboxIfNeeded() {
-    File exec = Environment.BUSYBOX;
-    if (exec.exists()) return;
-    Environment.mkdirIfNotExits(exec.getParentFile());
-    ResourceUtils.copyFileFromAssets(getArchSpecificAsset("busybox"), exec.getAbsolutePath());
-    if (!exec.canExecute()) {
-      if (!exec.setExecutable(true)) {
-        LOG.error("Cannot set busybox executable permissions.");
-      }
-    }
-  }
-
-  @NonNull
-  @Contract(pure = true)
-  public static String getArchSpecificAsset(String name) {
-    return ARCH_SPECIFIC_ASSET_DATA_DIR + "/" + name;
-  }
-
-  private static void extractLogsenderIfNeeded() {
-    try {
-      final boolean isOld = LOG_SENDER_VERSION > prefs.getInt(KEY_LOG_SENDER_VERSION, 0);
-      if (isOld) {
-        final File logsenderZip = new File(Environment.TMP_DIR, "logsender.zip");
-        ResourceUtils.copyFileFromAssets(
-            getCommonAsset("logsender.zip"), logsenderZip.getAbsolutePath());
-        ZipUtils.unzipFile(logsenderZip, Environment.HOME);
-        prefs.putInt(KEY_LOG_SENDER_VERSION, LOG_SENDER_VERSION);
-      }
-    } catch (IOException e) {
-      LOG.error("Error extracting log sender", e);
     }
   }
 
@@ -144,29 +176,18 @@ public class ToolsManager {
 
   private static void extractAapt2() {
     if (!Environment.AAPT2.exists()) {
-      ResourceUtils.copyFileFromAssets(
-          getArchSpecificAsset("aapt2"), Environment.AAPT2.getAbsolutePath());
+      final var context = BaseApplication.getBaseInstance();
+      final var nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
+      final var sourceAapt2 = new File(nativeLibraryDir, "libaapt2.so");
+      if (sourceAapt2.exists() && sourceAapt2.isFile()) {
+        FilesKt.copyTo(sourceAapt2, Environment.AAPT2, true, ConstantsKt.DEFAULT_BUFFER_SIZE);
+      } else {
+        LOG.error(sourceAapt2 + " file does not exist! This can be problematic.");
+      }
     }
 
     if (!Environment.AAPT2.canExecute() && !Environment.AAPT2.setExecutable(true)) {
       LOG.error("Cannot set executable permissions to AAPT2 binary");
-    }
-  }
-
-  private static void extractGradlePlugin() {
-    final var repoDir = new File(Environment.ANDROIDIDE_HOME, "repo");
-    FileUtils.createOrExistsDir(repoDir);
-
-    final var zip = new File(Environment.TMP_DIR, "gradle-plugin.zip");
-    if (zip.exists()) {
-      FileUtils.delete(zip);
-    }
-
-    ResourceUtils.copyFileFromAssets(getCommonAsset("gradle-plugin.zip"), zip.getAbsolutePath());
-    try {
-      ZipUtils.unzipFile(zip, repoDir);
-    } catch (Throwable e) {
-      LOG.error("Unable to extract gradle plugin zip file");
     }
   }
 
@@ -175,8 +196,8 @@ public class ToolsManager {
       FileUtils.delete(Environment.TOOLING_API_JAR);
     }
 
-    ResourceUtils.copyFileFromAssets(
-        getCommonAsset("tooling-api-all.jar"), Environment.TOOLING_API_JAR.getAbsolutePath());
+    ResourceUtils.copyFileFromAssets(getCommonAsset("tooling-api-all.jar"),
+        Environment.TOOLING_API_JAR.getAbsolutePath());
   }
 
   private static void writeInitScript() {
@@ -191,10 +212,4 @@ public class ToolsManager {
     return ResourceUtils.readAssets2String(getCommonAsset("androidide.init.gradle"));
   }
 
-  public static void extractLibHooks() {
-    if (!Environment.LIB_HOOK.exists()) {
-      ResourceUtils.copyFileFromAssets(
-          getArchSpecificAsset("libhook.so"), Environment.LIB_HOOK.getAbsolutePath());
-    }
-  }
 }

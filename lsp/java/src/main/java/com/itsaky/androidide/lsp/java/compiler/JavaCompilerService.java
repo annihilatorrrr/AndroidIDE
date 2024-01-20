@@ -44,11 +44,11 @@ import com.itsaky.androidide.utils.Environment;
 import com.itsaky.androidide.utils.ILogger;
 import com.itsaky.androidide.utils.SourceClassTrie;
 import com.itsaky.androidide.utils.StopWatch;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.MethodTree;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePath;
-import com.sun.source.util.Trees;
+import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.tree.MethodTree;
+import openjdk.source.util.SourcePositions;
+import openjdk.source.util.TreePath;
+import openjdk.source.util.Trees;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -69,9 +69,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import javax.tools.Diagnostic;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardLocation;
+import jdkx.tools.Diagnostic;
+import jdkx.tools.JavaFileObject;
+import jdkx.tools.StandardLocation;
 
 public class JavaCompilerService implements CompilerProvider {
 
@@ -86,7 +86,7 @@ public class JavaCompilerService implements CompilerProvider {
   protected final SynchronizedTask synchronizedTask = new SynchronizedTask();
   protected final SourceFileManager fileManager;
   protected final ModuleProject module;
-  public ReusableCompiler compiler = new ReusableCompiler();
+  public ReusableCompiler compiler = new JCReusableCompiler();
   protected Set<String> bootClasspathClasses =
       BootClasspathProvider.getTopLevelClasses(
           Collections.singleton(Environment.ANDROID_JAR.getAbsolutePath()));
@@ -221,6 +221,25 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   @Override
+  public List<String> findQualifiedNames(String simpleName, boolean onlyOne) {
+    final var names = new ArrayList<String>();
+    for (var name : publicTopLevelTypes()) {
+      // This will be true in a test environment
+      if (name.contains("/")) {
+        name = name.replace('/', '.');
+      }
+
+      if (name.endsWith("." + simpleName)) {
+        names.add(name);
+        if (onlyOne) {
+          break;
+        }
+      }
+    }
+    return names;
+  }
+
+  @Override
   public ParseTask parse(Path file) {
     Parser parser = Parser.parseFile(file);
     return new ParseTask(parser.task, parser.root);
@@ -269,22 +288,22 @@ public class JavaCompilerService implements CompilerProvider {
   }
 
   private synchronized void reparseOrRecompile(CompilationRequest request) {
-    if (needsRecompilation(request)) {
-      LOG.warn("Cannot reparse. Recompilation is required");
+//    if (needsRecompilation(request)) {
+//      LOG.warn("Cannot reparse. Recompilation is required");
       recompile(request);
-    } else {
-      LOG.debug("Trying to perform a reparse...");
-      tryReparse(request);
-    }
+//    } else {
+//      LOG.debug("Trying to perform a reparse...");
+//      tryReparse(request);
+//    }
   }
 
   private boolean needsRecompilation(final CompilationRequest request) {
     return this.cachedCompile == null
-        || this.cachedCompile.closed
-        || request.partialRequest == null
-        || request.partialRequest.cursor < 0
-        || !isChangeValidForReparse()
-        || request.sources.size() != 1; // Cannot perform a reparse if there are multiple files
+        || this.cachedCompile.closed;
+//        || request.partialRequest == null
+//        || request.partialRequest.cursor < 0
+//        || !isChangeValidForReparse()
+//        || request.sources.size() != 1; // Cannot perform a reparse if there are multiple files
   }
 
   private boolean isChangeValidForReparse() {
@@ -413,7 +432,7 @@ public class JavaCompilerService implements CompilerProvider {
       throw new RuntimeException("empty sources");
     }
 
-    CompileBatch firstAttempt = new CompileBatch(this, sources, request.compilationTaskProcessor);
+    CompileBatch firstAttempt = new CompileBatch(this, sources, request);
     Set<Path> addFiles = firstAttempt.needsAdditionalSources();
 
     if (addFiles.isEmpty()) {
@@ -430,7 +449,7 @@ public class JavaCompilerService implements CompilerProvider {
       moreSources.add(new SourceFileObject(add));
     }
 
-    return new CompileBatch(this, moreSources, request.compilationTaskProcessor);
+    return new CompileBatch(this, moreSources, request);
   }
 
   private boolean containsWord(Path file, String word) {

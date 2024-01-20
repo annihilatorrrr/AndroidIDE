@@ -17,6 +17,7 @@
 
 package com.itsaky.androidide.handlers
 
+import android.content.Context
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.itsaky.androidide.eventbus.events.Event
@@ -27,16 +28,16 @@ import com.itsaky.androidide.eventbus.events.editor.OnPauseEvent
 import com.itsaky.androidide.eventbus.events.editor.OnResumeEvent
 import com.itsaky.androidide.eventbus.events.editor.OnStartEvent
 import com.itsaky.androidide.eventbus.events.editor.OnStopEvent
-import com.itsaky.androidide.projects.FileManager
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.ProjectManagerImpl
 import com.itsaky.androidide.projects.util.BootClasspathProvider
 import com.itsaky.androidide.utils.EditorActivityActions
+import com.itsaky.androidide.utils.EditorSidebarActions
 import com.itsaky.androidide.utils.Environment
-import java.util.concurrent.CompletableFuture
 import org.greenrobot.eventbus.EventBus
+import java.util.concurrent.CompletableFuture
 
 /**
- * Observes lifecycle events if [com.itsaky.androidide.EditorActivity].
+ * Observes lifecycle events if [com.itsaky.androidide.EditorActivityKt].
  *
  * @author Akash Yadav
  */
@@ -45,17 +46,20 @@ class EditorActivityLifecyclerObserver : DefaultLifecycleObserver {
   private val fileActionsHandler = FileTreeActionHandler()
 
   override fun onCreate(owner: LifecycleOwner) {
+    EditorActivityActions.register(owner as Context)
+    EditorSidebarActions.registerActions(owner as Context)
     dispatchEvent(OnCreateEvent())
   }
 
   override fun onStart(owner: LifecycleOwner) {
     CompletableFuture.runAsync(this::initBootclasspathProvider)
-    register(fileActionsHandler, FileManager, ProjectManager)
+    register(fileActionsHandler, ProjectManagerImpl.getInstance())
 
     dispatchEvent(OnStartEvent())
   }
 
   override fun onResume(owner: LifecycleOwner) {
+    EditorActivityActions.register(owner as Context)
     dispatchEvent(OnResumeEvent())
   }
 
@@ -65,7 +69,7 @@ class EditorActivityLifecyclerObserver : DefaultLifecycleObserver {
   }
 
   override fun onStop(owner: LifecycleOwner) {
-    unregister(fileActionsHandler, FileManager, ProjectManager)
+    unregister(fileActionsHandler, ProjectManagerImpl.getInstance())
     dispatchEvent(OnStopEvent())
   }
 

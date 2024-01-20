@@ -24,11 +24,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
-import javax.tools.JavaFileObject;
+import jdkx.tools.JavaFileObject;
 
 public interface CompilerProvider {
   Path NOT_FOUND = Paths.get("");
@@ -44,6 +45,12 @@ public interface CompilerProvider {
   Path[] findTypeReferences(String className);
 
   Path[] findMemberReferences(String className, String memberName);
+
+  default List<String> findQualifiedNames(String simpleName) {
+    return findQualifiedNames(simpleName, false);
+  }
+
+  List<String> findQualifiedNames(String simpleName, boolean onlyOne);
 
   ParseTask parse(Path file);
 

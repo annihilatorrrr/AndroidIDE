@@ -16,13 +16,15 @@
  */
 package com.itsaky.androidide.lsp.java.models;
 
-import static com.itsaky.androidide.preferences.internal.EditorPreferencesKt.GOOGLE_CODE_STYLE;
+import static com.itsaky.androidide.preferences.internal.JavaPreferencesKt.GOOGLE_CODE_STYLE;
+import static com.itsaky.androidide.preferences.internal.JavaPreferencesKt.isJavaDiagnosticsEnabled;
 
 import androidx.annotation.NonNull;
 
 import com.google.googlejavaformat.java.JavaFormatterOptions;
 import com.itsaky.androidide.lsp.util.PrefBasedServerSettings;
 import com.itsaky.androidide.managers.PreferenceManager;
+import com.itsaky.androidide.utils.VMUtils;
 
 /**
  * Server settings for the java language server.
@@ -44,7 +46,12 @@ public class JavaServerSettings extends PrefBasedServerSettings {
 
     return instance;
   }
-
+  
+  @Override
+  public boolean diagnosticsEnabled() {
+    return VMUtils.isJvm() || isJavaDiagnosticsEnabled();
+  }
+  
   public JavaFormatterOptions getFormatterOptions() {
     return JavaFormatterOptions.builder().formatJavadoc(true).style(getStyle()).build();
   }

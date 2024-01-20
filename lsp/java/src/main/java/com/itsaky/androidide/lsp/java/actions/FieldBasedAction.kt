@@ -24,21 +24,20 @@ import com.itsaky.androidide.actions.markInvisible
 import com.itsaky.androidide.actions.newDialogBuilder
 import com.itsaky.androidide.actions.requirePath
 import com.itsaky.androidide.lsp.java.JavaCompilerProvider
-import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.lsp.java.compiler.CompileTask
 import com.itsaky.androidide.lsp.java.visitors.FindTypeDeclarationAt
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
+import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.utils.ILogger
-import com.itsaky.toaster.Toaster
-import com.itsaky.toaster.toast
-import com.sun.source.tree.ClassTree
-import com.sun.source.tree.Tree.Kind.VARIABLE
-import com.sun.source.tree.VariableTree
+import com.itsaky.androidide.utils.flashInfo
+import openjdk.source.tree.ClassTree
+import openjdk.source.tree.Tree.Kind.VARIABLE
+import openjdk.source.tree.VariableTree
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
-import javax.lang.model.element.Modifier.STATIC
+import jdkx.lang.model.element.Modifier.STATIC
 
 /**
  * Any action that has to work with fields in the current class can inherit this action.
@@ -54,12 +53,11 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
 
     if (
       !visible ||
-        !hasRequiredData(
-          data,
+        !data.hasRequiredData(
           com.itsaky.androidide.models.Range::class.java,
           CodeEditor::class.java
         ) ||
-        ProjectManager.rootProject == null
+        IProjectManager.getInstance().rootProject == null
     ) {
       markInvisible()
       return
@@ -69,10 +67,10 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
     enabled = true
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val range = data[com.itsaky.androidide.models.Range::class.java]!!
-    val file = requirePath(data)
-    val module = ProjectManager.findModuleForFile(file) ?: return Any()
+    val file = data.requirePath()
+    val module = IProjectManager.getInstance().findModuleForFile(file, false) ?: return Any()
 
     return JavaCompilerProvider.get(module).compile(file).get { task ->
       val triple = findFields(task, file, range)
@@ -135,7 +133,7 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
     }
 
     if (result.isEmpty()) {
-      toast(data[Context::class.java]!!.getString(R.string.msg_no_fields_found), Toaster.Type.INFO)
+      flashInfo(data[Context::class.java]!!.getString(R.string.msg_no_fields_found))
       return
     }
 
@@ -176,10 +174,7 @@ abstract class FieldBasedAction : BaseJavaCodeAction() {
       dialog.dismiss()
 
       if (checkedNames.isEmpty()) {
-        toast(
-          data[Context::class.java]!!.getString(R.string.msg_no_fields_selected),
-          Toaster.Type.ERROR
-        )
+        flashInfo(data[Context::class.java]!!.getString(R.string.msg_no_fields_selected))
         return@setPositiveButton
       }
 

@@ -19,72 +19,105 @@ package com.itsaky.androidide.uidesigner.drag
 
 import android.view.DragEvent
 import android.view.View
-import android.view.ViewGroup
 import com.itsaky.androidide.inflater.IView
-import com.itsaky.androidide.inflater.IViewGroup
-import com.itsaky.androidide.inflater.internal.AttributeAdapterIndex.getAdapter
-import com.itsaky.androidide.inflater.internal.LayoutFile
-import com.itsaky.androidide.inflater.internal.ViewImpl
-import com.itsaky.androidide.inflater.internal.utils.ViewFactory.generateLayoutParams
+import com.itsaky.androidide.inflater.models.UiWidget
+import com.itsaky.androidide.inflater.viewGroup
 import com.itsaky.androidide.uidesigner.fragments.DesignerWorkspaceFragment.Companion.DRAGGING_WIDGET_MIME
-import com.itsaky.androidide.uidesigner.models.UiWidget
-import java.io.File
+import com.itsaky.androidide.uidesigner.models.UiView
+import com.itsaky.androidide.uidesigner.models.UiViewGroup
+import kotlin.math.absoluteValue
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Listens for drag events in the given view group.
  *
  * @author Akash Yadav
  */
-class WidgetDragListener(val view: IViewGroup, private val placeholderView: View) :
-  View.OnDragListener {
+internal class WidgetDragListener(
+  val view: UiViewGroup,
+  private val placeholder: IView,
+  private val touchSlop: Int
+) : View.OnDragListener {
 
-  private val placeholder by lazy { ViewImpl(LayoutFile(File(""), ""), "", placeholderView) }
+  private var lastX = 0f
+  private var lastY = 0f
 
   override fun onDrag(v: View, event: DragEvent): Boolean {
-    return when (event.action) {
+    when (event.action) {
       DragEvent.ACTION_DRAG_STARTED -> {
-        event.clipDescription.hasMimeType(DRAGGING_WIDGET_MIME)
+
+        val name =
+          when (val data = event.localState) {
+            is IView -> data.name
+            is UiWidget -> data.name
+            else -> throw IllegalArgumentException("A local state of UiWidget or IView is expected")
+          }
+ 
+        return event.clipDescription.hasMimeType(DRAGGING_WIDGET_MIME) &&
+          event.localState != view &&
+          view.canAcceptChild(name, event.localState as? IView?)
       }
       DragEvent.ACTION_DRAG_ENTERED,
       DragEvent.ACTION_DRAG_LOCATION -> {
+
         if (event.action == DragEvent.ACTION_DRAG_ENTERED) {
           view.onHighlightStateUpdated(true)
         }
+
+        val distX = event.x - lastX
+        val distY = event.y - lastY
+        if (distX.absoluteValue < touchSlop && distY.absoluteValue < touchSlop) {
+          return true
+        }
+
         placeholder.removeFromParent()
+        val state = event.localState
+        if (state is UiView) {
+          state.includeInIndexComputation = false
+        }
+
         val index = view.computeViewIndex(event.x, event.y)
         view.addChild(index, placeholder)
-        true
+
+        lastX = event.x
+        lastY = event.y
+
+        return true
       }
       DragEvent.ACTION_DRAG_EXITED -> {
         view.onHighlightStateUpdated(false)
-        true
+        return true
       }
       DragEvent.ACTION_DROP -> {
-        val index = view.indexOfChild(this.placeholder)
-        this.placeholder.removeFromParent()
-        
         val child =
           when (val data = event.localState) {
-            is IView -> data
-            is UiWidget ->
-              data.createView(view.viewGroup.context, (view as ViewImpl).file).apply {
-                this.view.layoutParams =
-                  generateLayoutParams(this@WidgetDragListener.view.viewGroup)
-                val adapter = getAdapter(this.name)
-                adapter?.applyBasic(this)
-              }
+            is IView -> {
+              data.removeFromParent()
+              data
+            }
+            is UiWidget -> data.createView(view.viewGroup.context, view.viewGroup, view.file)
             else -> throw IllegalArgumentException("A local state of UiWidget or IView is expected")
           }
-        child.removeFromParent()
+
+        var index = view.indexOfChild(this.placeholder)
+        this.placeholder.removeFromParent()
+        index = min(max(0, index), view.childCount)
+
         this.view.addChild(index, child)
-        child.onHighlightStateUpdated(false)
-        view.onHighlightStateUpdated(false)
-        true
+        this.view.onHighlightStateUpdated(false)
+
+        if (child is UiView) {
+          child.includeInIndexComputation = true
+        }
+
+        return true
       }
-      else -> false
+      DragEvent.ACTION_DRAG_ENDED -> {
+        this.placeholder.removeFromParent()
+        return true
+      }
+      else -> return false
     }
   }
-
-  private val IViewGroup.viewGroup: ViewGroup
-    get() = view as ViewGroup
 }

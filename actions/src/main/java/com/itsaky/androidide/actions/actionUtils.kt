@@ -19,44 +19,46 @@ package com.itsaky.androidide.actions
 
 import android.content.Context
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.itsaky.androidide.utils.DialogUtils
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.io.File
 import java.nio.file.Path
 
-fun ActionItem.requireContext(data: ActionData): Context {
-  return data.get(Context::class.java)
-    ?: throw IllegalArgumentException("No context instance provided")
+fun ActionData.getContext(): Context? {
+  return get(Context::class.java)
 }
 
-fun ActionItem.requireFile(data: ActionData): File {
-  return data.get(File::class.java) ?: throw IllegalArgumentException("No file instance provided")
+fun ActionData.requireContext(): Context {
+  return getContext() ?: throw IllegalArgumentException("No context instance provided")
 }
 
-fun ActionItem.requirePath(data: ActionData): Path {
-  return requireFile(data).toPath()
+fun ActionData.requireFile(): File {
+  return get(File::class.java) ?: throw IllegalArgumentException("No file instance provided")
 }
 
-fun ActionItem.requireEditor(data: ActionData): CodeEditor {
-  return data.get(CodeEditor::class.java)
+fun ActionData.requirePath(): Path {
+  return requireFile().toPath()
+}
+
+fun ActionData.requireEditor(): CodeEditor {
+  return get(CodeEditor::class.java)
     ?: throw IllegalArgumentException("An editor instance is required but none was provided")
 }
 
-fun ActionItem.newDialogBuilder(data: ActionData): MaterialAlertDialogBuilder {
-  val klass = Class.forName("com.itsaky.androidide.utils.DialogUtils")
-  val method = klass.getDeclaredMethod("newMaterialDialogBuilder", Context::class.java)
-  return method.invoke(null, data.get(Context::class.java)!!) as MaterialAlertDialogBuilder
+fun newDialogBuilder(data: ActionData): MaterialAlertDialogBuilder {
+  val context = data.get(Context::class.java)!!
+  return DialogUtils.newMaterialDialogBuilder(context)
 }
 
 /**
  * Checks if the given [ActionData] has instances of the given [types].
  *
- * @param data The data to check.
  * @param types The type of objects to look for.
- * @return `true` if the [data] has the given [types], `false` otherwise.
+ * @return `true` if this [ActionData] has the given [types], `false` otherwise.
  */
-fun ActionItem.hasRequiredData(data: ActionData, vararg types: Class<*>): Boolean {
+fun ActionData.hasRequiredData(vararg types: Class<*>): Boolean {
   for (type in types) {
-    data.get(type) ?: return false
+    get(type) ?: return false
   }
 
   return true

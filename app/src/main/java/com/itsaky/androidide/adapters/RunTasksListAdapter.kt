@@ -20,11 +20,10 @@ package com.itsaky.androidide.adapters
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.checkbox.MaterialCheckBox
 import com.itsaky.androidide.adapters.RunTasksListAdapter.VH
 import com.itsaky.androidide.databinding.LayoutRunTaskItemBinding
 import com.itsaky.androidide.models.Checkable
-import com.itsaky.androidide.tooling.api.model.GradleTask
+import com.itsaky.androidide.tooling.api.models.GradleTask
 
 /**
  * Adapter for showing tasks list in [RunTaskDialogFragment]
@@ -55,11 +54,8 @@ constructor(
     binding.taskDesc.text = task.description
 
     binding.root.setOnClickListener {
-      binding.check.isChecked = !binding.check.isChecked
-    }
-    
-    binding.check.addOnCheckedStateChangedListener { checkbox, _ ->
-      data.isChecked = checkbox.isChecked
+      data.isChecked = !data.isChecked
+      binding.check.isChecked = data.isChecked
       onCheckChanged(data)
     }
   }

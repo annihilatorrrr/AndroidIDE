@@ -21,35 +21,28 @@ import com.itsaky.androidide.lsp.java.compiler.SourceFileManager;
 import com.itsaky.androidide.lsp.java.compiler.SourceFileObject;
 import com.itsaky.androidide.models.Position;
 import com.itsaky.androidide.models.Range;
-import com.itsaky.androidide.projects.ProjectManager;
+import com.itsaky.androidide.projects.IProjectManager;
 import com.itsaky.androidide.projects.api.ModuleProject;
 import com.itsaky.androidide.utils.ILogger;
-import com.sun.source.tree.ClassTree;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.LineMap;
-import com.sun.source.tree.MemberSelectTree;
-import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.tree.VariableTree;
-import com.sun.source.util.JavacTask;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePath;
-import com.sun.source.util.Trees;
-import com.sun.tools.javac.api.JavacTool;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.lang.model.element.Modifier;
-import javax.lang.model.element.Name;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
+import jdkx.tools.JavaCompiler;
+import jdkx.tools.JavaFileObject;
+import openjdk.source.tree.ClassTree;
+import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.tree.LineMap;
+import openjdk.source.tree.MemberSelectTree;
+import openjdk.source.tree.MethodTree;
+import openjdk.source.tree.VariableTree;
+import openjdk.source.util.JavacTask;
+import openjdk.source.util.SourcePositions;
+import openjdk.source.util.TreePath;
+import openjdk.source.util.Trees;
+import openjdk.tools.javac.api.JavacTool;
 
 public class Parser {
 
@@ -80,9 +73,12 @@ public class Parser {
     this.trees = Trees.instance(task);
   }
 
-  /** Create a task that compiles a single file */
+  /**
+   * Create a task that compiles a single file
+   */
   private static JavacTask singleFileTask(JavaFileObject file) {
-    final ModuleProject module = ProjectManager.INSTANCE.findModuleForFile(Paths.get(file.toUri()));
+    final ModuleProject module = IProjectManager.getInstance()
+        .findModuleForFile(Paths.get(file.toUri()));
     if (module != null) {
       FILE_MANAGER = SourceFileManager.forModule(module);
     }
@@ -97,7 +93,7 @@ public class Parser {
             Collections.singletonList(file));
   }
 
-  private static void ignoreError(javax.tools.Diagnostic<? extends JavaFileObject> __) {
+  private static void ignoreError(jdkx.tools.Diagnostic<? extends JavaFileObject> __) {
     // Too noisy, this only comes up in parse tasks which tend to be less important
     // LOG.warning(err.getMessage(Locale.getDefault()));
   }
@@ -238,19 +234,5 @@ public class Parser {
       t = t.getParentPath();
     }
     return "";
-  }
-
-  public Set<Name> packagePrivateClasses() {
-    Set<Name> result = new HashSet<>();
-    for (Tree t : root.getTypeDecls()) {
-      if (t instanceof ClassTree) {
-        ClassTree c = (ClassTree) t;
-        boolean isPublic = c.getModifiers().getFlags().contains(Modifier.PUBLIC);
-        if (!isPublic) {
-          result.add(c.getSimpleName());
-        }
-      }
-    }
-    return result;
   }
 }

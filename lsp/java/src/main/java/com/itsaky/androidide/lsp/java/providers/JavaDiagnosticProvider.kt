@@ -24,7 +24,7 @@ import com.itsaky.androidide.lsp.models.DiagnosticResult
 import com.itsaky.androidide.progress.ProgressManager
 import com.itsaky.androidide.progress.ProgressManager.Companion.abortIfCancelled
 import com.itsaky.androidide.projects.FileManager
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.utils.ILogger
 import java.nio.file.Path
 import java.time.Instant
@@ -45,7 +45,8 @@ class JavaDiagnosticProvider {
 
   fun analyze(file: Path): DiagnosticResult {
 
-    val module = ProjectManager.findModuleForFile(file) ?: return DiagnosticResult.NO_UPDATE
+    val module = IProjectManager.getInstance().findModuleForFile(file, false)
+      ?: return DiagnosticResult.NO_UPDATE
     val compiler = JavaCompilerService(module)
 
     abortIfCancelled()
@@ -60,23 +61,33 @@ class JavaDiagnosticProvider {
       return cachedDiagnostics
     }
 
-    if (analyzing.get() && analyzingThread != null) {
-      log.debug("Cancelling currently analyzing thread...")
-      ProgressManager.instance.cancel(analyzingThread!!)
-      analyzingThread = null
+    analyzingThread?.let { analyzingThread ->
+      if (analyzing.get()) {
+        log.debug("Cancelling currently analyzing thread...")
+        ProgressManager.instance.cancel(analyzingThread)
+        this.analyzingThread = null
+      }
     }
 
     analyzing.set(true)
 
-    analyzingThread = AnalyzingThread(compiler, file)
-    analyzingThread!!.start()
-    analyzingThread!!.join()
+    val analyzingThread = AnalyzingThread(compiler, file).also {
+      analyzingThread = it
+      it.start()
+      it.join()
+    }
 
-    val result = analyzingThread!!.result
+    return analyzingThread.result.also {
+      this.analyzingThread = null
+    }
+  }
 
-    analyzingThread = null
+  fun isAnalyzing(): Boolean {
+    return this.analyzing.get()
+  }
 
-    return result
+  fun cancel() {
+    this.analyzingThread?.cancel()
   }
 
   fun clearTimestamp(file: Path) {
@@ -84,37 +95,54 @@ class JavaDiagnosticProvider {
   }
 
   private fun doAnalyze(file: Path, task: CompileTask): DiagnosticResult {
-    return if (!isTaskValid(task)) {
-      // Do not use Collections.emptyList ()
-      // The returned list is accessed and the list returned by Collections.emptyList()
-      // throws exception when trying to access.
-      cachedDiagnostics
-    } else DiagnosticResult(file, findDiagnostics(task, file))
+    val result =
+      if (!isTaskValid(task)) {
+        // Do not use Collections.emptyList ()
+        // The returned list is accessed and the list returned by Collections.emptyList()
+        // throws exception when trying to access.
+        log.info("Using cached diagnostics")
+        cachedDiagnostics
+      } else
+        DiagnosticResult(
+          file,
+          findDiagnostics(task, file).sortedBy {
+            it.range
+          }
+        )
+    return result.also {
+      log.info("Analyze file completed. Found ${result.diagnostics.size} diagnostic items")
+    }
   }
 
   private fun isTaskValid(task: CompileTask?): Boolean {
+    abortIfCancelled()
     return task?.task != null && task.roots != null && task.roots.size > 0
   }
 
   inner class AnalyzingThread(val compiler: JavaCompilerService, val file: Path) :
     Thread("JavaAnalyzerThread") {
-    lateinit var result: DiagnosticResult
+
+    var result: DiagnosticResult = DiagnosticResult.NO_UPDATE
+
+    fun cancel() {
+      ProgressManager.instance.cancel(this)
+    }
 
     override fun run() {
       result =
         try {
-            compiler.compile(file).get { task -> doAnalyze(file, task) }
-          } catch (err: Throwable) {
-            
-            if (!CancelChecker.isCancelled(err)) {
-              log.warn("Unable to analyze file", err)
-            }
-
-            DiagnosticResult.NO_UPDATE
-          } finally {
-            compiler.destroy()
-            analyzing.set(false)
+          compiler.compile(file).get { task -> doAnalyze(file, task) }
+        } catch (err: Throwable) {
+          if (CancelChecker.isCancelled(err)) {
+            log.error("Analyze request cancelled")
+          } else {
+            log.warn("Unable to analyze file", err)
           }
+          DiagnosticResult.NO_UPDATE
+        } finally {
+          compiler.destroy()
+          analyzing.set(false)
+        }
           .also {
             cachedDiagnostics = it
             analyzeTimestamps[file] = Instant.now()

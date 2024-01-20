@@ -25,12 +25,12 @@ import com.itsaky.androidide.lsp.java.actions.BaseJavaCodeAction
 import com.itsaky.androidide.lsp.java.models.DiagnosticCode
 import com.itsaky.androidide.lsp.java.rewrite.ImplementAbstractMethods
 import com.itsaky.androidide.utils.ILogger
-import javax.tools.Diagnostic
-import javax.tools.JavaFileObject
+import jdkx.tools.Diagnostic
+import jdkx.tools.JavaFileObject
 
 /** @author Akash Yadav */
 class ImplementAbstractMethodsAction : BaseJavaCodeAction() {
-  override val id: String = "lsp_java_implementAbstractMethods"
+  override val id: String = "ide.editor.lsp.java.diagnostics.implementAbstractMethods"
   override var label: String = ""
   private var diagnosticCode = DiagnosticCode.DOES_NOT_OVERRIDE_ABSTRACT.id
   private val log = ILogger.newInstance(javaClass.simpleName)
@@ -45,7 +45,7 @@ class ImplementAbstractMethodsAction : BaseJavaCodeAction() {
       return
     }
 
-    if (!hasRequiredData(data, com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)) {
+    if (!data.hasRequiredData( com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)) {
       markInvisible()
       return
     }
@@ -67,7 +67,7 @@ class ImplementAbstractMethodsAction : BaseJavaCodeAction() {
   }
 
   @Suppress("UNCHECKED_CAST")
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val diagnostic =
       JavaDiagnosticUtils.asJCDiagnostic(
         data.get(com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)!!.extra as Diagnostic<out JavaFileObject>

@@ -58,8 +58,9 @@ public abstract class ILogger {
   private static final List<LogListener> logListeners = new ArrayList<>();
   private static final Map<String, ILogger> cachedLoggers = new WeakHashMap<>();
 
-  private static ILogger instance;
   protected final String TAG;
+
+  protected boolean isEnabled = true;
 
   protected ILogger(String tag) {
     TAG = preProcessLogTag(tag);
@@ -89,23 +90,6 @@ public abstract class ILogger {
     return createInstance(tag);
   }
 
-  public static Priority priority(char priorityChar) {
-    for (var priority : Priority.values()) {
-      if (priorityChar(priority) == priorityChar) {
-        return priority;
-      }
-    }
-    throw new IllegalArgumentException("Invalid priority character: " + priorityChar);
-  }
-
-  public static char priorityChar(Priority priority) {
-    return Character.toUpperCase(priorityText(priority).charAt(0));
-  }
-
-  public static String priorityText(Priority priority) {
-    return priority.name();
-  }
-
   /**
    * Log error messages.
    *
@@ -113,40 +97,45 @@ public abstract class ILogger {
    * @return This logger instance.
    */
   public ILogger error(Object... messages) {
-    return log(Priority.ERROR, messages);
+    return log(Level.ERROR, messages);
   }
 
   /**
-   * Log messages with the given priority.
+   * Log messages with the given log level.
    *
-   * @param priority The priority of the log messages.
+   * @param level    The log level of the messages.
    * @param messages The messages to log.
    * @return This logger instance.
    */
-  public ILogger log(Priority priority, Object... messages) {
-    logAndNotify(priority, generateMessage(messages));
+  public ILogger log(Level level, Object... messages) {
+    logAndNotify(level, generateMessage(messages));
     return this;
   }
 
-  private void logAndNotify(Priority priority, String msg) {
-    doLog(priority, msg);
+  private void logAndNotify(Level level, String msg) {
+    if (!isEnabled()) {
+      // logger is disabled
+      return;
+    }
+
+    doLog(level, msg);
     for (final var listener : logListeners) {
-      listener.log(priority, TAG, msg);
+      listener.log(level, TAG, msg);
     }
   }
 
   /**
    * Log the message to an appropriate stream where the user can see the log messages.
    *
-   * @param priority The priority for this log message.
+   * @param level   The log level for this message.
    * @param message The full generated message for this log. Might contain new lines.
-   * @see ILogger.Priority#DEBUG
-   * @see ILogger.Priority#ERROR
-   * @see ILogger.Priority#WARNING
-   * @see ILogger.Priority#VERBOSE
-   * @see ILogger.Priority#INFO
+   * @see Level#DEBUG
+   * @see Level#ERROR
+   * @see Level#WARNING
+   * @see Level#VERBOSE
+   * @see Level#INFO
    */
-  protected abstract void doLog(Priority priority, String message);
+  protected abstract void doLog(Level level, String message);
 
   protected String generateMessage(Object... messages) {
     StringBuilder sb = new StringBuilder();
@@ -170,7 +159,7 @@ public abstract class ILogger {
    * @return This logger instance.
    */
   public ILogger warn(Object... messages) {
-    return log(Priority.WARNING, messages);
+    return log(Level.WARNING, messages);
   }
 
   /**
@@ -180,7 +169,7 @@ public abstract class ILogger {
    * @return This logger instance.
    */
   public ILogger verbose(Object... messages) {
-    return log(Priority.VERBOSE, messages);
+    return log(Level.VERBOSE, messages);
   }
 
   /**
@@ -190,10 +179,12 @@ public abstract class ILogger {
    * @return This logger instance.
    */
   public ILogger info(Object... messages) {
-    return log(Priority.INFO, messages);
+    return log(Level.INFO, messages);
   }
 
-  /** Logs the name of method and class which calls this method. */
+  /**
+   * Logs the name of method and class which calls this method.
+   */
   public void logThis() {
     debug(getCallerClassDescription());
   }
@@ -205,7 +196,25 @@ public abstract class ILogger {
    * @return This logger instance.
    */
   public ILogger debug(Object... messages) {
-    return log(Priority.DEBUG, messages);
+    return log(Level.DEBUG, messages);
+  }
+
+  /**
+   * Enable or disable this logger instance.
+   *
+   * @param enabled Whether this logger is enabled.
+   * @see #isEnabled()
+   */
+  public void setEnabled(boolean enabled) {
+    isEnabled = enabled;
+  }
+
+  /**
+   * @return Whether this logger is enabled.
+   * @see #setEnabled(boolean)
+   */
+  public boolean isEnabled() {
+    return isEnabled;
   }
 
   protected String getCallerClassDescription() {
@@ -224,17 +233,40 @@ public abstract class ILogger {
     return "<Logger> <Cannot get caller information>";
   }
 
-  /** Logging priority. */
-  public enum Priority {
-    DEBUG,
-    WARNING,
-    ERROR,
-    INFO,
-    VERBOSE
+  /**
+   * Logging level.
+   */
+  public enum Level {
+
+    DEBUG('D'),
+    WARNING('W'),
+    ERROR('E'),
+    INFO('I'),
+    VERBOSE('V');
+
+    public final char levelChar;
+
+    Level(char levelChar) {
+      this.levelChar = levelChar;
+    }
+
+    public static Level forChar(char c) {
+      c = Character.toUpperCase(c);
+      for (Level value : values()) {
+        if (value.levelChar == c) {
+          return value;
+        }
+      }
+
+      throw new IllegalArgumentException("Invalid level char " + c);
+    }
   }
 
-  /** A listener which can be used to listen to log events. */
+  /**
+   * A listener which can be used to listen to log events.
+   */
   public interface LogListener {
-    void log(Priority priority, String tag, String message);
+
+    void log(Level level, String tag, String message);
   }
 }

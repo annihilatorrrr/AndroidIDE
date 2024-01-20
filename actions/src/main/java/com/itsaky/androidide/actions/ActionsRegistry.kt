@@ -18,6 +18,8 @@ package com.itsaky.androidide.actions
 
 import android.view.Menu
 import com.itsaky.androidide.actions.internal.DefaultActionsRegistry
+import com.itsaky.androidide.utils.ServiceLoader
+import com.itsaky.androidide.utils.VMUtils
 
 /** @author Akash Yadav */
 abstract class ActionsRegistry {
@@ -29,7 +31,9 @@ abstract class ActionsRegistry {
     @JvmStatic
     fun getInstance(): ActionsRegistry {
       if (instance == null) {
-        instance = DefaultActionsRegistry()
+        instance = if (VMUtils.isJvm()) {
+          DefaultActionsRegistry()
+        } else ServiceLoader.load(ActionsRegistry::class.java).findFirstOrThrow()
       }
 
       return instance as ActionsRegistry
@@ -69,14 +73,23 @@ abstract class ActionsRegistry {
   abstract fun findAction(location: ActionItem.Location, id: String): ActionItem?
 
   /**
+   * Find the action with the given unique item ID.
+   *
+   * @param itemId The ID of the action to find.
+   * @return The found action or `null`.
+   */
+  abstract fun findAction(location: ActionItem.Location, itemId: Int): ActionItem?
+
+  /**
    * Fill the given menu with the registered actions.
    *
    * Subclasses must first call [ActionItem.prepare] to update the action.
    */
-  abstract fun fillMenu(data: ActionData, location: ActionItem.Location, menu: Menu)
+  abstract fun fillMenu(params: FillMenuParams)
 
   /** Get all the registered actions at the given location. */
   abstract fun getActions(location: ActionItem.Location): Map<String, ActionItem>
+
   /** Clear all the registered actions. */
   abstract fun clearActions(location: ActionItem.Location)
 

@@ -1,4 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?><!--
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
   ~  This file is part of AndroidIDE.
   ~
   ~  AndroidIDE is free software: you can redistribute it and/or modify
@@ -15,7 +17,8 @@
   ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-<androidx.appcompat.widget.LinearLayoutCompat xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.appcompat.widget.LinearLayoutCompat
+  xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:app="http://schemas.android.com/apk/res-auto"
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
@@ -28,9 +31,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="16dp"
-    android:hint="@string/hint_search_tasks"
-    android:theme="@style/AppTheme.TextInputLayout"
-    app:boxBackgroundColor="@color/content_background">
+    android:hint="@string/hint_search_tasks">
 
     <com.google.android.material.textfield.TextInputEditText
       android:layout_width="match_parent"
@@ -39,7 +40,7 @@
   </com.google.android.material.textfield.TextInputLayout>
 
   <androidx.recyclerview.widget.RecyclerView
-    android:id="@+id/categories"
+    android:id="@+id/tasks"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginStart="16dp"
@@ -47,6 +48,6 @@
     android:layout_marginEnd="16dp"
     app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
     tools:itemCount="3"
-    tools:listitem="@layout/layout_run_tasks_category" />
+    tools:listitem="@layout/layout_run_task_item" />
 
 </androidx.appcompat.widget.LinearLayoutCompat>

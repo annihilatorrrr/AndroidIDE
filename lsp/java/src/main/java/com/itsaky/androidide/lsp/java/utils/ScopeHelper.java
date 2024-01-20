@@ -18,18 +18,18 @@
 package com.itsaky.androidide.lsp.java.utils;
 
 import com.itsaky.androidide.lsp.java.compiler.CompileTask;
-import com.sun.source.tree.Scope;
-import com.sun.source.util.Trees;
+import openjdk.source.tree.Scope;
+import openjdk.source.util.Trees;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.Modifier;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.util.Elements;
+import jdkx.lang.model.element.Element;
+import jdkx.lang.model.element.Modifier;
+import jdkx.lang.model.element.TypeElement;
+import jdkx.lang.model.type.DeclaredType;
+import jdkx.lang.model.util.Elements;
 
 public class ScopeHelper {
   public static List<Element> scopeMembers(
@@ -37,7 +37,7 @@ public class ScopeHelper {
     Trees trees = Trees.instance(task.task);
     Elements elements = task.task.getElements();
     boolean isStatic = false;
-    List<Element> list = new ArrayList<Element>();
+    List<Element> list = new ArrayList<>();
     for (Scope scope : fastScopes(inner)) {
       if (scope.getEnclosingMethod() != null) {
         isStatic = isStatic || scope.getEnclosingMethod().getModifiers().contains(Modifier.STATIC);
@@ -88,9 +88,7 @@ public class ScopeHelper {
     // Scopes may be contained in an enclosing scope.
     // The outermost scope contains those elements available via "star import" declarations;
     // the scope within that contains the top level elements of the compilation unit, including
-    // any
-    // named
-    // imports.
+    // any named imports.
     // https://parent.docs.oracle.com/en/java/javase/11/docs/api/jdk.compiler/com/sun/source/tree/Scope.html
     return scopes.subList(0, scopes.size() - 2);
   }

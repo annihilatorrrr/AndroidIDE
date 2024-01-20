@@ -25,20 +25,26 @@ import com.itsaky.androidide.actions.EditorActionItem
 import com.itsaky.androidide.actions.hasRequiredData
 import com.itsaky.androidide.actions.markInvisible
 import com.itsaky.androidide.actions.requireFile
+import com.itsaky.androidide.lsp.api.ILanguageClient
 import com.itsaky.androidide.lsp.api.ILanguageServerRegistry
 import com.itsaky.androidide.lsp.java.JavaCompilerProvider
 import com.itsaky.androidide.lsp.java.JavaLanguageServer
+import com.itsaky.androidide.lsp.java.R
+import com.itsaky.androidide.lsp.java.compiler.JavaCompilerService
 import com.itsaky.androidide.lsp.java.rewrite.Rewrite
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.utils.DocumentUtils
 import com.itsaky.androidide.utils.ILogger
+import com.itsaky.androidide.utils.flashError
 import java.io.File
 
 /**
  * Base class for java code actions
+ *
  * @author Akash Yadav
  */
 abstract class BaseJavaCodeAction : EditorActionItem {
+
   override var visible: Boolean = true
   override var enabled: Boolean = true
   override var icon: Drawable? = null
@@ -46,11 +52,11 @@ abstract class BaseJavaCodeAction : EditorActionItem {
   override var location: ActionItem.Location = ActionItem.Location.EDITOR_CODE_ACTIONS
 
   protected abstract val titleTextRes: Int
-  
-  override fun prepare(data: ActionData) {
 
+  override fun prepare(data: ActionData) {
+    super.prepare(data)
     if (
-      !hasRequiredData(data, Context::class.java, JavaLanguageServer::class.java, File::class.java)
+      !data.hasRequiredData(Context::class.java, JavaLanguageServer::class.java, File::class.java)
     ) {
       markInvisible()
       return
@@ -60,19 +66,49 @@ abstract class BaseJavaCodeAction : EditorActionItem {
       label = data[Context::class.java]!!.getString(titleTextRes)
     }
 
-    val file = requireFile(data)
+    val file = data.requireFile()
     visible = DocumentUtils.isJavaFile(file.toPath())
     enabled = visible
   }
 
   fun performCodeAction(data: ActionData, result: Rewrite) {
-    val server = ILanguageServerRegistry.getDefault().getServer(JavaLanguageServer.SERVER_ID)!!
-    val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return)
-    val client = server.client!!
+    val compiler = data.requireCompiler()
 
-    val file = requireFile(data)
+    val actions =
+      try {
+        result.asCodeActions(compiler, label)
+      } catch (e: Exception) {
+        flashError(e.cause?.message ?: e.message)
+        ILogger.instance().error(e)
+        return
+      }
 
-    client.performCodeAction(file, result.asCodeActions(compiler, label))
+    if (actions == null) {
+      onPerformCodeActionFailed(data)
+      return
+    }
+    
+    data.getLanguageClient()?.performCodeAction(actions)
+  }
+  
+  protected open fun onPerformCodeActionFailed(data: ActionData) {
+    flashError(R.string.msg_codeaction_failed)
+  }
+
+  protected fun ActionData.requireLanguageServer(): JavaLanguageServer {
+    return ILanguageServerRegistry.getDefault().getServer(JavaLanguageServer.SERVER_ID)
+        as JavaLanguageServer
+  }
+
+  protected fun ActionData.getLanguageClient(): ILanguageClient? {
+    return requireLanguageServer().client
+  }
+
+  protected fun ActionData.requireCompiler(): JavaCompilerService {
+    val module = IProjectManager.getInstance().findModuleForFile(requireFile(), false)
+    requireNotNull(module) {
+      "Cannot get compiler instance. Unable to find module for file: ${requireFile().name}"
+    }
+    return JavaCompilerProvider.get(module)
   }
 }

@@ -25,16 +25,17 @@ import com.blankj.utilcode.util.KeyboardUtils
 import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.EditorRelatedAction
+import com.itsaky.androidide.actions.markInvisible
 
 /** @author Akash Yadav */
-class RedoAction() : EditorRelatedAction() {
+class RedoAction(context: Context, override val order: Int) : EditorRelatedAction() {
 
-  constructor(context: Context) : this() {
+  init {
     label = context.getString(R.string.redo)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_redo)
   }
 
-  override val id: String = "editor_redo"
+  override val id: String = "ide.editor.code.text.redo"
 
   override fun prepare(data: ActionData) {
     super.prepare(data)
@@ -43,14 +44,22 @@ class RedoAction() : EditorRelatedAction() {
       return
     }
 
-    val editor = getEditor(data)!!
+    val editor = data.getEditor() ?: run {
+      markInvisible()
+      return
+    }
+
     enabled = editor.canRedo()
   }
 
-  override fun execAction(data: ActionData): Boolean {
-    val editor = getEditor(data)!!
+  override suspend fun execAction(data: ActionData): Boolean {
+    val editor = data.getEditor() ?: run {
+      markInvisible()
+      return false
+    }
+
     editor.redo()
-    getActivity(data)?.invalidateOptionsMenu()
+    data.getActivity()?.invalidateOptionsMenu()
     return true
   }
 

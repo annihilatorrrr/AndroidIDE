@@ -26,34 +26,34 @@ import com.android.aapt.Resources.XmlElement
 import com.android.aapt.Resources.XmlNode.NodeCase.ELEMENT
 import com.android.aaptcompiler.AaptResourceType.ID
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
-import com.android.aaptcompiler.BlameLogger
-import com.android.aaptcompiler.ResourceFile
-import com.android.aaptcompiler.ResourceFile.Type.ProtoXml
-import com.android.aaptcompiler.ResourceName
 import com.android.aaptcompiler.XmlProcessor
-import com.android.aaptcompiler.extractPathData
-import com.itsaky.androidide.aapt.logging.IDELogger
-import com.itsaky.androidide.inflater.IInflateEventsListener
+import com.itsaky.androidide.inflater.DefaultComponentFactory
+import com.itsaky.androidide.inflater.IAttribute
+import com.itsaky.androidide.inflater.IComponentFactory
+import com.itsaky.androidide.inflater.IComponentFactory.Companion.LAYOUT_INFLATER_COMPONENT_FACTORY_KEY
 import com.itsaky.androidide.inflater.ILayoutInflater
+import com.itsaky.androidide.inflater.INamespace
 import com.itsaky.androidide.inflater.IView
 import com.itsaky.androidide.inflater.IViewGroup
 import com.itsaky.androidide.inflater.InflateException
-import com.itsaky.androidide.inflater.InflationFinishEvent
-import com.itsaky.androidide.inflater.InflationStartEvent
-import com.itsaky.androidide.inflater.OnApplyAttributeEvent
-import com.itsaky.androidide.inflater.OnInflateViewEvent
+import com.itsaky.androidide.inflater.events.IInflateEventsListener
+import com.itsaky.androidide.inflater.events.InflationFinishEvent
+import com.itsaky.androidide.inflater.events.InflationStartEvent
+import com.itsaky.androidide.inflater.events.OnApplyAttributeEvent
+import com.itsaky.androidide.inflater.events.OnInflateViewEvent
 import com.itsaky.androidide.inflater.internal.utils.IDTable
 import com.itsaky.androidide.inflater.internal.utils.ViewFactory.createViewInstance
 import com.itsaky.androidide.inflater.internal.utils.ViewFactory.generateLayoutParams
-import com.itsaky.androidide.inflater.internal.utils.endParse
-import com.itsaky.androidide.inflater.internal.utils.isParsing
 import com.itsaky.androidide.inflater.internal.utils.parseLayoutReference
-import com.itsaky.androidide.inflater.internal.utils.startParse
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.inflater.utils.endParse
+import com.itsaky.androidide.inflater.utils.isParsing
+import com.itsaky.androidide.inflater.utils.startParse
+import com.itsaky.androidide.inflater.viewAdapter
+import com.itsaky.androidide.lookup.Lookup
 import com.itsaky.androidide.projects.api.AndroidModule
-import com.itsaky.androidide.utils.ILogger
 import com.itsaky.androidide.xml.widgets.Widget
 import com.itsaky.androidide.xml.widgets.WidgetTable
+import com.itsaky.androidide.xml.widgets.WidgetType
 import java.io.File
 
 /**
@@ -61,12 +61,19 @@ import java.io.File
  *
  * @author Akash Yadav
  */
-open class LayoutInflaterImpl : ILayoutInflater() {
+open class LayoutInflaterImpl : ILayoutInflater {
 
   override var inflationEventListener: IInflateEventsListener? = null
-  private val log = ILogger.newInstance("LayoutInflaterImpl")
+  override var module: AndroidModule? = null
+  private var manuallyStartedParse = false
   private var _primaryInflatingFile: File? = null
   private var _currentLayoutFile: LayoutFile? = null
+
+  override var componentFactory: IComponentFactory = DefaultComponentFactory()
+    set(value) {
+      field = value
+      Lookup.getDefault().update(LAYOUT_INFLATER_COMPONENT_FACTORY_KEY, value)
+    }
 
   protected val primaryInflatingFile: File
     get() = this._primaryInflatingFile!!
@@ -75,20 +82,33 @@ open class LayoutInflaterImpl : ILayoutInflater() {
     get() = this._currentLayoutFile!!
 
   override fun inflate(file: File, parent: ViewGroup): List<IView> {
-    this._primaryInflatingFile = file
-    IDTable.newRound()
-    if (!isParsing) {
-      startParse(file)
-    }
-    inflationEventListener?.onEvent(InflationStartEvent())
-    return doInflate(file, parent).apply {
-      inflationEventListener?.onEvent(InflationFinishEvent(this))
-      _primaryInflatingFile = null
+    startInflation(file)
+    return doInflate(file, parent).apply { finishInflation() }
+  }
+
+  override fun inflate(file: File, parent: IViewGroup): List<IView> {
+    startInflation(file)
+    return doInflate(file, parent).apply { finishInflation() }
+  }
+
+  override fun close() {
+    this.module = null
+    this.inflationEventListener = null
+    this._primaryInflatingFile = null
+    this._currentLayoutFile = null
+
+    if (manuallyStartedParse) {
+      // end the pare only if we called startParse()
       endParse()
     }
   }
 
   protected open fun doInflate(file: File, parent: ViewGroup): List<IView> {
+    val (processor, module) = processXmlFile(file)
+    return doInflate(processor, parent, module)
+  }
+
+  protected open fun doInflate(file: File, parent: IViewGroup): List<IView> {
     val (processor, module) = processXmlFile(file)
     return doInflate(processor, parent, module)
   }
@@ -99,6 +119,14 @@ open class LayoutInflaterImpl : ILayoutInflater() {
     module: AndroidModule,
   ): List<IView> {
     return doInflate(processor, module) { wrap(parent) }
+  }
+
+  protected open fun doInflate(
+    processor: XmlProcessor,
+    parent: IViewGroup,
+    module: AndroidModule,
+  ): List<IView> {
+    return doInflate(processor, module) { parent }
   }
 
   protected open fun doInflate(
@@ -126,11 +154,8 @@ open class LayoutInflaterImpl : ILayoutInflater() {
       .forEach { IDTable.set(currentLayoutFile.resName, it.name.entry!!, View.generateViewId()) }
 
     val element = node.element
-    val views = onCreateView(element, parent(), module)
 
-    this._currentLayoutFile = null
-
-    return views
+    return onCreateView(element, parent(), module)
   }
 
   protected open fun onCreateView(
@@ -158,11 +183,16 @@ open class LayoutInflaterImpl : ILayoutInflater() {
     // TODO(itsaky): Handle views from libraries
     val view: ViewImpl =
       (if (widget == null) {
-        onCreateUnsupportedView("View with name '${element.name}' not found", parentView)
+        onCreateUnsupportedView(
+          element.name,
+          element.childCount > 0,
+          "View with name '${element.name}' not found",
+          parentView
+        )
       } else {
         onCreatePlatformView(widget, parentView, module, widgets)
       })
-        as ViewImpl
+          as ViewImpl
 
     addNamespaceDecls(element, view)
     applyAttributes(element, view, parent)
@@ -187,13 +217,11 @@ open class LayoutInflaterImpl : ILayoutInflater() {
     view: ViewImpl,
     parent: IViewGroup,
     attachToParent: Boolean = true,
-    updateAttributes: Boolean = false,
-    checkAttr: (XmlAttribute) -> Boolean = { true }
+    shouldApplyAttr: (XmlAttribute) -> Boolean = { true }
   ) {
     val parentView = parent.view as ViewGroup
     val adapter =
-      AttributeAdapterIndex.getAdapter(view.name)
-        ?: throw InflateException("No attribute adapter found for view ${view.name}")
+      view.viewAdapter ?: throw InflateException("No attribute adapter found for view ${view.name}")
 
     view.view.layoutParams = generateLayoutParams(parentView)
 
@@ -205,15 +233,13 @@ open class LayoutInflaterImpl : ILayoutInflater() {
 
     if (element.attributeCount > 0) {
       for (xmlAttribute in element.attributeList) {
-        if (!checkAttr(xmlAttribute)) {
-          continue
-        }
+
         val namespace =
-          view.findNamespaceByUri(xmlAttribute.namespaceUri)
-            ?: throw InflateException("Unknown namespace : ${xmlAttribute.namespaceUri}")
-        val attr =
-          AttributeImpl(namespace = namespace, name = xmlAttribute.name, value = xmlAttribute.value)
-        view.addAttribute(attr, updateAttributes)
+          if (xmlAttribute.namespaceUri.isNullOrBlank()) null
+          else view.findNamespaceByUri(xmlAttribute.namespaceUri)
+
+        val attr = onCreateAttribute(view, namespace, xmlAttribute.name, xmlAttribute.value)
+        view.addAttribute(attribute = attr, apply = shouldApplyAttr(xmlAttribute), update = true)
         inflationEventListener?.onEvent(OnApplyAttributeEvent(view, attr))
       }
     }
@@ -247,31 +273,37 @@ open class LayoutInflaterImpl : ILayoutInflater() {
     }
 
     val (processor, module) = processXmlFile(file)
-    val inflated = doInflate(processor, module) { parent }
+
+    // we need to restore the layout file instance as well
+    val inflated =
+      currentLayoutFile.let { layoutFile ->
+        doInflate(processor, module) { parent }.also { _currentLayoutFile = layoutFile }
+      }
+
     if (inflated.isEmpty() || inflated.size > 1) {
       // probably a merged view or no views at all
       // no need to apply attributes
       return inflated
     }
 
-    val view = inflated[0] as ViewImpl
+    val includedView = inflated[0]
+    val view = IncludeView(includedView as ViewImpl)
     addNamespaceDecls(element = element, view = view)
 
     // The inflated <include> view is already attached to parent
-    // so we don't need to do it here
+    // however, we want the parent to have the 'IncludeView' as the child and not the actually
+    // included view
+    val index = parent.indexOfChild(includedView)
+    parent.removeChild(index)
+    parent.addChild(index, view)
+
     // also, the attribute on an <include> tag must override the attributes specified on the root
     // view of the included layout file
-    applyAttributes(
-      element = element,
-      view = view,
-      parent = parent,
-      attachToParent = false,
-      updateAttributes = true
-    ) {
+    applyAttributes(element = element, view = view, parent = parent, attachToParent = false) {
       !(it.namespaceUri.isNullOrBlank() && it.name == "layout")
     }
 
-    return inflated
+    return listOf(view)
   }
 
   protected open fun onCreatePlatformView(
@@ -282,55 +314,81 @@ open class LayoutInflaterImpl : ILayoutInflater() {
   ): IView {
     return try {
       val v = createViewInstance(widget.qualifiedName, parent.context)
-      if (v is ViewGroup) {
-        return ViewGroupImpl(currentLayoutFile, widget.qualifiedName, v)
-      }
-      return ViewImpl(currentLayoutFile, widget.qualifiedName, v)
+      return componentFactory.createView(currentLayoutFile, widget.qualifiedName, v)
     } catch (err: Throwable) {
-      onCreateUnsupportedView("Unable to create view for widget ${widget.qualifiedName}", parent)
+      onCreateUnsupportedView(
+        widget.qualifiedName,
+        widget.type == WidgetType.LAYOUT,
+        "Unable to create view for widget ${widget.qualifiedName}",
+        parent
+      )
     }
+  }
+
+  protected open fun onCreateAttribute(
+    view: ViewImpl,
+    namespace: INamespace?,
+    name: String,
+    value: String
+  ): IAttribute {
+    return componentFactory.createAttr(
+      view = view,
+      namespace = namespace,
+      name = name,
+      value = value
+    )
   }
 
   protected open fun addNamespaceDecls(element: XmlElement, view: ViewImpl) {
     if (element.namespaceDeclarationCount > 0) {
       for (xmlNamespace in element.namespaceDeclarationList) {
-        view.namespaceDecls[xmlNamespace.uri] = NamespaceImpl(xmlNamespace.prefix, xmlNamespace.uri)
+        view.namespaces[xmlNamespace.uri] = NamespaceImpl(xmlNamespace.prefix, xmlNamespace.uri)
       }
     }
   }
 
   protected open fun processXmlFile(file: File): Pair<XmlProcessor, AndroidModule> {
-    val pathData = extractPathData(file)
-    if (pathData.type != LAYOUT) {
-      throw InflateException("File is not a layout file.")
-    }
-
-    if (ProjectManager.rootProject == null) {
-      throw InflateException("Project is not initialized!")
-    }
-
-    val module =
-      ProjectManager.findModuleForFile(file) as? AndroidModule
-        ?: throw InflateException("Cannot find module for given file. Is the project initialized?")
-    val resFile =
-      ResourceFile(
-        ResourceName(module.packageName, pathData.type!!, pathData.name),
-        pathData.config,
-        pathData.source,
-        ProtoXml
-      )
-
-    val processor = XmlProcessor(pathData.source, BlameLogger(IDELogger))
-    processor.process(resFile, file.inputStream())
-    return processor to module
+    return com.itsaky.androidide.inflater.utils.processXmlFile(file, LAYOUT)
   }
 
-  private fun onCreateUnsupportedView(message: String, parent: ViewGroup): IView {
-    return ErrorView(currentLayoutFile, parent.context, message)
+  private fun onCreateUnsupportedView(
+    name: String,
+    isLayout: Boolean,
+    message: String,
+    parent: ViewGroup
+  ): IView {
+    return if (isLayout) {
+      ErrorLayout(file = currentLayoutFile, name = name, context = parent.context)
+    } else {
+      ErrorView(file = currentLayoutFile, name = name, context = parent.context, message = message)
+    }
+  }
+
+  private fun List<IView>.finishInflation() {
+    inflationEventListener?.onEvent(InflationFinishEvent(this))
+    _primaryInflatingFile = null
+  }
+
+  private fun startInflation(file: File) {
+    this._primaryInflatingFile = file
+    IDTable.newRound()
+    if (!isParsing) {
+      if (this.module == null) {
+        startParse(file)
+        this.module = com.itsaky.androidide.inflater.utils.module
+      } else {
+        startParse(this.module!!)
+      }
+      this.manuallyStartedParse = true
+    } else {
+      manuallyStartedParse = false
+    }
+    inflationEventListener?.onEvent(InflationStartEvent())
   }
 
   private fun wrap(parent: ViewGroup): IViewGroup {
-    return ViewGroupImpl(currentLayoutFile, parent.javaClass.name, parent)
+    return componentFactory.createView(currentLayoutFile, parent.javaClass.name, parent)
+        as IViewGroup
   }
 
   private fun SourcePosition.lineCol(): String {

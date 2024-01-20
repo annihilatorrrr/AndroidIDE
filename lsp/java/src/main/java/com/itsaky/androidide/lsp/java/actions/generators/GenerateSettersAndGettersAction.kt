@@ -34,18 +34,19 @@ import com.itsaky.androidide.lsp.java.compiler.CompileTask
 import com.itsaky.androidide.lsp.java.utils.EditHelper
 import com.itsaky.androidide.lsp.java.utils.JavaParserUtils
 import com.itsaky.androidide.lsp.java.utils.TypeUtils.toType
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.preferences.internal.tabSize
+import com.itsaky.androidide.preferences.utils.indentationString
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.utils.ILogger
-import com.itsaky.toaster.Toaster
-import com.itsaky.toaster.toast
-import com.sun.source.tree.ClassTree
-import com.sun.source.util.TreePath
-import com.sun.source.util.Trees
+import com.itsaky.androidide.utils.flashError
 import io.github.rosemoe.sora.widget.CodeEditor
+import jdkx.lang.model.element.Modifier.FINAL
+import jdkx.lang.model.element.VariableElement
+import openjdk.source.tree.ClassTree
+import openjdk.source.util.TreePath
+import openjdk.source.util.Trees
 import java.util.concurrent.CompletableFuture
-import javax.lang.model.element.Modifier.FINAL
-import javax.lang.model.element.VariableElement
 
 /**
  * Allows the user to select fields from the current class, then generates setters and getters for
@@ -54,7 +55,7 @@ import javax.lang.model.element.VariableElement
  * @author Akash Yadav
  */
 class GenerateSettersAndGettersAction : FieldBasedAction() {
-  override val id: String = "lsp_java_generateSettersAndGetters"
+  override val id: String = "ide.editor.lsp.java.generator.settersAndGetters"
   override var label: String = ""
   private val log = ILogger.newInstance(javaClass.simpleName)
 
@@ -69,9 +70,8 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
           if (error != null) {
             log.error("Unable to generate setters and getters", error)
             ThreadUtils.runOnUiThread {
-              toast(
-                data[Context::class.java]!!.getString(R.string.msg_cannot_generate_setters_getters),
-                Toaster.Type.ERROR
+              flashError(
+                data[Context::class.java]!!.getString(R.string.msg_cannot_generate_setters_getters)
               )
             }
             return@whenComplete
@@ -82,9 +82,10 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
 
   private fun generateForFields(data: ActionData, names: MutableSet<String>) {
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return)
     val range = data[com.itsaky.androidide.models.Range::class.java]!!
-    val file = requirePath(data)
+    val file = data.requirePath()
 
     compiler.compile(file).run { task ->
       val triple = findFields(task, file, range)
@@ -106,7 +107,7 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
     type: ClassTree,
     paths: List<TreePath>,
   ) {
-    val file = requirePath(data)
+    val file = data.requirePath()
     val editor = data[CodeEditor::class.java]!!
     val trees = Trees.instance(task.task)
     val insert = EditHelper.insertAtEndOfClass(task.task, task.root(file), type)
@@ -119,7 +120,7 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
       }
 
       val leaf = path.leaf
-      val indent = EditHelper.indent(task.task, task.root(file), leaf) + 4
+      val indent = EditHelper.indent(task.task, task.root(file), leaf) + tabSize
       sb.append(createGetter(element, indent))
       if (!element.modifiers.contains(FINAL)) {
         sb.append(createSetter(element, indent))
@@ -133,13 +134,13 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
   }
 
   private fun createGetter(variable: VariableElement, indent: Int): String {
-    val name: String = variable.simpleName.toString()
+    val name = variable.simpleName.toString()
     val method =
       createMethod(variable, "get", toType(variable.asType())) { _, body ->
         body.addStatement(createReturnStmt(name))
       }
     var text = "\n" + JavaParserUtils.prettyPrint(method) { false }
-    text = text.replace("\n", "\n${EditHelper.repeatSpaces(indent)}")
+    text = text.replace("\n", "\n${indentationString(indent)}")
 
     return text
   }
@@ -154,8 +155,8 @@ class GenerateSettersAndGettersAction : FieldBasedAction() {
         body.addStatement(createAssignmentStmt(name))
       }
 
-    var text = "\n" + method.toString()
-    text = text.replace("\n", "\n${EditHelper.repeatSpaces(indent)}")
+    var text = "\n" + JavaParserUtils.prettyPrint(method) { false }
+    text = text.replace("\n", "\n${indentationString(indent)}")
 
     return text
   }

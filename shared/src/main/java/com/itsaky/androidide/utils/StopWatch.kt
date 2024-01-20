@@ -24,12 +24,13 @@ package com.itsaky.androidide.utils
  * @param label The label for the log message.
  * @author Akash Yadav
  */
-class StopWatch(
+class StopWatch
+@JvmOverloads
+constructor(
   val label: String,
   val start: Long = System.currentTimeMillis(),
   var lastLap: Long = start
 ) {
-  constructor(label: String) : this(label, System.currentTimeMillis())
 
   private val log = ILogger.newInstance(javaClass.simpleName)
 
@@ -45,5 +46,25 @@ class StopWatch(
   fun lapFromLast(message: String) {
     log.debug("$message in ${System.currentTimeMillis() - lastLap}ms")
     lastLap = System.currentTimeMillis()
+  }
+}
+
+/**
+ * Run the given action with a stopwatch to log the time the action took to execute.
+ *
+ * @see StopWatch
+ */
+inline fun <R> withStopWatch(
+  label: String,
+  start: Long = System.currentTimeMillis(),
+  lastLap: Long = start,
+  action: (StopWatch) -> R
+): R {
+  return StopWatch(label, start, lastLap).run {
+    try {
+      action(this)
+    } finally {
+      log()
+    }
   }
 }

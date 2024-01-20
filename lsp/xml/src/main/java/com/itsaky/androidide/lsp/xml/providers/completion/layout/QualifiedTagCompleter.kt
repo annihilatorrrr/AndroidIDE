@@ -29,7 +29,7 @@ import com.itsaky.androidide.lsp.xml.utils.XmlUtils.NodeType
 import com.itsaky.androidide.projects.api.ModuleProject
 import com.itsaky.androidide.utils.ClassTrie
 import com.itsaky.androidide.xml.widgets.WidgetTable
-import com.itsaky.androidide.xml.widgets.internal.DefaultWidgetTable
+import com.itsaky.androidide.xml.internal.widgets.DefaultWidgetTable
 import org.eclipse.lemminx.dom.DOMDocument
 
 /**
@@ -84,10 +84,10 @@ class QualifiedTagCompleter(provider: ICompletionProvider) : LayoutTagCompletion
 
   private fun doLookup(): Pair<DefaultWidgetTable, ModuleProject> {
     val widgets =
-      Lookup.DEFAULT.lookup(WidgetTable.COMPLETION_LOOKUP_KEY)
+      Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY)
         ?: throw IllegalStateException("No widget table provided")
     val module =
-      Lookup.DEFAULT.lookup(ModuleProject.COMPLETION_MODULE_KEY)
+      Lookup.getDefault().lookup(ModuleProject.COMPLETION_MODULE_KEY)
         ?: throw IllegalStateException("No module project provided")
     return widgets as DefaultWidgetTable to module
   }

@@ -26,17 +26,17 @@ import com.itsaky.androidide.lsp.models.CompletionResult
 import com.itsaky.androidide.lsp.models.MatchLevel
 import com.itsaky.androidide.lsp.models.MatchLevel.NO_MATCH
 import com.itsaky.androidide.progress.ProgressManager.Companion.abortIfCancelled
-import com.sun.source.tree.CompilationUnitTree
-import com.sun.source.tree.MemberSelectTree
-import com.sun.source.util.TreePath
-import com.sun.source.util.Trees
+import openjdk.source.tree.CompilationUnitTree
+import openjdk.source.tree.MemberSelectTree
+import openjdk.source.util.TreePath
+import openjdk.source.util.Trees
 import java.nio.file.Path
-import javax.lang.model.element.Element
-import javax.lang.model.element.ElementKind.METHOD
-import javax.lang.model.element.ExecutableElement
-import javax.lang.model.element.Modifier.STATIC
-import javax.lang.model.element.Name
-import javax.lang.model.element.TypeElement
+import jdkx.lang.model.element.Element
+import jdkx.lang.model.element.ElementKind.METHOD
+import jdkx.lang.model.element.ExecutableElement
+import jdkx.lang.model.element.Modifier.STATIC
+import jdkx.lang.model.element.Name
+import jdkx.lang.model.element.TypeElement
 
 /**
  * Completes static imports.

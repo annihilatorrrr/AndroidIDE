@@ -27,17 +27,17 @@ import com.itsaky.androidide.lsp.java.parser.ParseTask;
 import com.itsaky.androidide.models.Position;
 import com.itsaky.androidide.models.Range;
 import com.itsaky.androidide.lsp.models.TextEdit;
-import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.LineMap;
-import com.sun.source.tree.VariableTree;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.Trees;
+import openjdk.source.tree.ExpressionTree;
+import openjdk.source.tree.LineMap;
+import openjdk.source.tree.VariableTree;
+import openjdk.source.util.SourcePositions;
+import openjdk.source.util.Trees;
 
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Map;
 
-import javax.lang.model.element.Modifier;
+import jdkx.lang.model.element.Modifier;
 
 public class ConvertFieldToBlock extends Rewrite {
   final Path file;
@@ -48,6 +48,7 @@ public class ConvertFieldToBlock extends Rewrite {
     this.position = position;
   }
 
+  @NonNull
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
     ParseTask task = compiler.parse(file);

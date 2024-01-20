@@ -28,13 +28,13 @@ import com.itsaky.androidide.lsp.java.models.DiagnosticCode
 import com.itsaky.androidide.lsp.java.rewrite.ConvertFieldToBlock
 import com.itsaky.androidide.lsp.java.utils.CodeActionUtils.findPosition
 import com.itsaky.androidide.lsp.models.DiagnosticItem
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.utils.ILogger
 
 /** @author Akash Yadav */
 class FieldToBlockAction : BaseJavaCodeAction() {
 
-  override val id: String = "lsp_java_fieldToBlock"
+  override val id: String = "ide.editor.lsp.java.diagnostics.fieldToBlock"
   override var label: String = ""
   private val diagnosticCode = DiagnosticCode.UNUSED_FIELD.id
   private val log = ILogger.newInstance(javaClass.simpleName)
@@ -48,7 +48,7 @@ class FieldToBlockAction : BaseJavaCodeAction() {
       return
     }
 
-    if (!hasRequiredData(data, DiagnosticItem::class.java)) {
+    if (!data.hasRequiredData( DiagnosticItem::class.java)) {
       markInvisible()
       return
     }
@@ -60,11 +60,12 @@ class FieldToBlockAction : BaseJavaCodeAction() {
     }
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return Any())
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return Any())
     val diagnostic = data[DiagnosticItem::class.java]!!
-    val file = requirePath(data)
+    val file = data.requirePath()
 
     return compiler.compile(file).get {
       ConvertFieldToBlock(file, findPosition(it, diagnostic.range.start))

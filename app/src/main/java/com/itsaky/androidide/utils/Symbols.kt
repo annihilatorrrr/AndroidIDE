@@ -17,30 +17,30 @@
  */
 package com.itsaky.androidide.utils
 
-import com.itsaky.androidide.preferences.internal.tabSize
-import com.itsaky.androidide.preferences.internal.useSoftTab
-import com.itsaky.androidide.views.SymbolInputView.Symbol
+import com.itsaky.androidide.models.Symbol
 import java.io.File
 
 object Symbols {
 
   @JvmStatic
-  fun forFile(file: File?): Array<Symbol?> {
+  fun forFile(file: File?): List<Symbol> {
     if (file == null || !file.isFile) {
-      return emptyArray()
+      return emptyList()
     }
 
     return when (file.extension) {
       "java",
       "gradle",
-      "kt" -> javaSymbols()
-      "xml" -> xmlSymbols()
-      else -> plainTextSymbols()
+      "kt",
+      "kts" -> javaSymbols
+
+      "xml" -> xmlSymbols
+      else -> plainTextSymbols
     }
   }
 
-  private fun javaSymbols(): Array<Symbol?> {
-    return arrayOf(
+  private val javaSymbols by lazy {
+    listOf(
       TabSymbol(),
       Symbol("{", "{}"),
       Symbol("}"),
@@ -66,8 +66,8 @@ object Symbols {
     )
   }
 
-  private fun xmlSymbols(): Array<Symbol?> {
-    return arrayOf(
+  private val xmlSymbols by lazy {
+    listOf(
       TabSymbol(),
       Symbol("<", "<>"),
       Symbol(">"),
@@ -95,8 +95,8 @@ object Symbols {
     )
   }
 
-  private fun plainTextSymbols(): Array<Symbol?> {
-    return arrayOf(
+  val plainTextSymbols by lazy {
+    listOf(
       TabSymbol(),
       Symbol("{", "{}"),
       Symbol("}"),
@@ -124,20 +124,10 @@ object Symbols {
 
   private class TabSymbol : Symbol("↹") {
 
-    override fun getCommit(): String {
-      return createTabChars()
-    }
+    override val commit: String
+      get() = "\t"
 
-    override fun getOffset(): Int {
-      return createTabChars().length
-    }
-
-    private fun createTabChars(): String {
-      if (!useSoftTab) {
-        return "\t"
-      }
-
-      return " ".repeat(tabSize)
-    }
+    override val offset: Int
+      get() = 1
   }
 }

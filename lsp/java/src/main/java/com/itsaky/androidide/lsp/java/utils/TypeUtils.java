@@ -36,25 +36,25 @@ import com.github.javaparser.printer.DefaultPrettyPrinter;
 import com.github.javaparser.printer.configuration.DefaultPrinterConfiguration;
 import com.github.javaparser.printer.configuration.PrinterConfiguration;
 import com.itsaky.androidide.lsp.java.visitors.PrettyPrintingVisitor;
-import com.sun.source.tree.IdentifierTree;
-import com.sun.source.tree.ParameterizedTypeTree;
-import com.sun.source.tree.PrimitiveTypeTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.tree.TypeParameterTree;
-import com.sun.source.tree.WildcardTree;
-import com.sun.tools.javac.code.BoundKind;
-import com.sun.tools.javac.tree.JCTree;
+import openjdk.source.tree.IdentifierTree;
+import openjdk.source.tree.ParameterizedTypeTree;
+import openjdk.source.tree.PrimitiveTypeTree;
+import openjdk.source.tree.Tree;
+import openjdk.source.tree.TypeParameterTree;
+import openjdk.source.tree.WildcardTree;
+import openjdk.tools.javac.code.BoundKind;
+import openjdk.tools.javac.tree.JCTree;
 
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.function.Predicate;
 
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.NoType;
-import javax.lang.model.type.TypeKind;
-import javax.lang.model.type.TypeMirror;
-import javax.lang.model.type.TypeVariable;
+import jdkx.lang.model.element.TypeElement;
+import jdkx.lang.model.type.DeclaredType;
+import jdkx.lang.model.type.NoType;
+import jdkx.lang.model.type.TypeKind;
+import jdkx.lang.model.type.TypeMirror;
+import jdkx.lang.model.type.TypeVariable;
 
 public class TypeUtils {
 
@@ -151,21 +151,21 @@ public class TypeUtils {
 
   public static Type toType(TypeMirror typeMirror) {
     if (typeMirror.getKind() == TypeKind.ARRAY) {
-      return toArrayType((javax.lang.model.type.ArrayType) typeMirror);
+      return toArrayType((jdkx.lang.model.type.ArrayType) typeMirror);
     }
     if (typeMirror.getKind().isPrimitive()) {
-      return toPrimitiveType((javax.lang.model.type.PrimitiveType) typeMirror);
+      return toPrimitiveType((jdkx.lang.model.type.PrimitiveType) typeMirror);
     }
-    if (typeMirror instanceof javax.lang.model.type.IntersectionType) {
-      return toIntersectionType((javax.lang.model.type.IntersectionType) typeMirror);
+    if (typeMirror instanceof jdkx.lang.model.type.IntersectionType) {
+      return toIntersectionType((jdkx.lang.model.type.IntersectionType) typeMirror);
     }
-    if (typeMirror instanceof javax.lang.model.type.WildcardType) {
-      return toWildcardType((javax.lang.model.type.WildcardType) typeMirror);
+    if (typeMirror instanceof jdkx.lang.model.type.WildcardType) {
+      return toWildcardType((jdkx.lang.model.type.WildcardType) typeMirror);
     }
-    if (typeMirror instanceof javax.lang.model.type.DeclaredType) {
+    if (typeMirror instanceof jdkx.lang.model.type.DeclaredType) {
       return toClassOrInterfaceType((DeclaredType) typeMirror);
     }
-    if (typeMirror instanceof javax.lang.model.type.TypeVariable) {
+    if (typeMirror instanceof jdkx.lang.model.type.TypeVariable) {
       return toType(((TypeVariable) typeMirror));
     }
     if (typeMirror instanceof NoType) {
@@ -176,7 +176,7 @@ public class TypeUtils {
 
   // type mirrors
 
-  public static IntersectionType toIntersectionType(javax.lang.model.type.IntersectionType type) {
+  public static IntersectionType toIntersectionType(jdkx.lang.model.type.IntersectionType type) {
     NodeList<ReferenceType> collect =
         type.getBounds().stream()
             .map(TypeUtils::toType)
@@ -207,7 +207,7 @@ public class TypeUtils {
     return typeParameter;
   }
 
-  public static WildcardType toWildcardType(javax.lang.model.type.WildcardType type) {
+  public static WildcardType toWildcardType(jdkx.lang.model.type.WildcardType type) {
     WildcardType wildcardType = new WildcardType();
     if (type.getSuperBound() != null) {
       Type result = toType(type.getSuperBound());
@@ -224,12 +224,12 @@ public class TypeUtils {
     return wildcardType;
   }
 
-  public static PrimitiveType toPrimitiveType(javax.lang.model.type.PrimitiveType type) {
+  public static PrimitiveType toPrimitiveType(jdkx.lang.model.type.PrimitiveType type) {
     PrimitiveType.Primitive primitive = PrimitiveType.Primitive.valueOf(type.getKind().name());
     return new PrimitiveType(primitive);
   }
 
-  public static ArrayType toArrayType(javax.lang.model.type.ArrayType type) {
+  public static ArrayType toArrayType(jdkx.lang.model.type.ArrayType type) {
     Type componentType = toType(type.getComponentType());
     return new ArrayType(componentType);
   }

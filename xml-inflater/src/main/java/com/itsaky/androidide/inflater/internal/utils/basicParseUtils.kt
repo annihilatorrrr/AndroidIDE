@@ -17,6 +17,7 @@
 
 package com.itsaky.androidide.inflater.internal.utils
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -34,7 +35,6 @@ import com.android.aaptcompiler.AaptResourceType.ATTR
 import com.android.aaptcompiler.AaptResourceType.BOOL
 import com.android.aaptcompiler.AaptResourceType.COLOR
 import com.android.aaptcompiler.AaptResourceType.DIMEN
-import com.android.aaptcompiler.AaptResourceType.DRAWABLE
 import com.android.aaptcompiler.AaptResourceType.INTEGER
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
 import com.android.aaptcompiler.AaptResourceType.STRING
@@ -59,10 +59,15 @@ import com.android.aaptcompiler.tryParseFlagSymbol
 import com.android.aaptcompiler.tryParseInt
 import com.android.aaptcompiler.tryParseReference
 import com.itsaky.androidide.inflater.drawable.DrawableParserFactory
+import com.itsaky.androidide.inflater.utils.module
 import com.itsaky.androidide.utils.ILogger
 import java.io.File
+import java.text.SimpleDateFormat
 
 private val log = ILogger.newInstance("ParseUtilsKt")
+
+// TODO : We need a more descriptive string here
+private const val DEFAULT_STRING_VALUE = "AndroidIDE"
 
 private val stringResolver =
   fun(it: Value?): String? {
@@ -97,6 +102,9 @@ inline fun <reified T> ((Value?) -> T?).arrayResolver(value: Value?): Array<T>? 
 }
 
 fun parseString(value: String): String {
+  if (value.isEmpty()) {
+    return DEFAULT_STRING_VALUE
+  }
   if (value[0] == '@') {
     return parseReference(
       value = value,
@@ -122,6 +130,10 @@ inline fun <reified T> parseArray(
   def: Array<T>? = emptyArray(),
   noinline resolver: (Value?) -> T?
 ): Array<T>? {
+  if (value.isEmpty()) {
+    return emptyArray()
+  }
+
   if (value[0] == '@') {
     return parseReference(
       value = value,
@@ -135,6 +147,9 @@ inline fun <reified T> parseArray(
 
 @JvmOverloads
 fun parseInteger(value: String, def: Int = 0): Int {
+  if (value.isEmpty()) {
+    return def
+  }
   if (value.isDigitsOnly()) {
     tryParseInt(value)?.resValue?.apply {
       return data
@@ -150,6 +165,10 @@ fun parseInteger(value: String, def: Int = 0): Int {
 
 @JvmOverloads
 fun parseBoolean(value: String, def: Boolean = false): Boolean {
+  if (value.isEmpty()) {
+    return def
+  }
+
   tryParseBool(value)?.resValue?.apply {
     return data == -1
   }
@@ -185,16 +204,17 @@ fun parseDrawable(context: Context, value: String, def: Drawable = unknownDrawab
       return colorResolver.invoke(it)?.let { newColorDrawable(it) }
     }
 
+  if (value.isEmpty()) {
+    return def
+  }
+
   if (value[0] == '#') {
     return parseColorDrawable(context, value)
   } else if (value[0] == '@') {
-    val type = parseResourceReference(value)?.second
-    if (type == null) {
-      throwInvalidResType(DRAWABLE, value)
-    }
+    val type = parseResourceReference(value)?.second ?: return def
     return parseReference(
       value = value,
-      expectedType = type!!,
+      expectedType = type,
       def = def,
       resolver = drawableResolver
     )
@@ -203,10 +223,10 @@ fun parseDrawable(context: Context, value: String, def: Drawable = unknownDrawab
 }
 
 fun parseLayoutReference(value: String): File? {
-  if (value[0] != '@') {
+  if (value.isEmpty() || value[0] != '@') {
     throw InflateException("Value must be a reference to a layout file")
   }
-  
+
   val layoutResolver: (Value?) -> File? =
     fun(it): File? {
       return if (it is FileReference) {
@@ -215,7 +235,8 @@ fun parseLayoutReference(value: String): File? {
     }
   val type = parseResourceReference(value)?.second ?: return null
   if (type != LAYOUT) {
-    throwInvalidResType(LAYOUT, value)
+    log.warn("Layout file reference is expected but '$type' was found for value '$value'")
+    return null
   }
   return parseReference(value, type, null, layoutResolver)
 }
@@ -226,7 +247,10 @@ fun parseColorDrawable(context: Context, value: String, def: Int = Color.TRANSPA
 }
 
 @JvmOverloads
-fun parseColor(context: Context, value: String, def: Int = Color.TRANSPARENT): Int {
+fun parseColor(@Suppress("UNUSED_PARAMETER") context: Context, value: String, def: Int = Color.TRANSPARENT): Int {
+  if (value.isEmpty()) {
+    return def
+  }
   when (value[0]) {
     '#' -> return parseHexColor(value, def)
     '@' ->
@@ -322,6 +346,10 @@ fun parseLong(value: String, def: Long = 0L): Long {
 
 @JvmOverloads
 fun parseGravity(value: String, def: Int = defaultGravity()): Int {
+  if (value.isEmpty()) {
+    return def
+  }
+
   val attr = findAttributeResource("android", ATTR, "gravity") ?: return defaultGravity()
   return parseFlag(attr = attr, value = value, def = def)
 }
@@ -342,7 +370,10 @@ fun <T> parseReference(
 ): T {
   val (pck, type, name) = parseResourceReference(value) ?: return def
   if (type != expectedType) {
-    throwInvalidResType(expectedType, value)
+    log.warn(
+      "Reference of type '$expectedType' is expected but '$type' was found for value '$value'"
+    )
+    return def
   }
   return if (pck.isNullOrBlank()) {
     resolveUnqualifiedResourceReference(
@@ -469,8 +500,17 @@ internal fun parseResourceReference(value: String): Triple<String?, AaptResource
   }
 }
 
-private fun throwInvalidResType(type: AaptResourceType, value: String) {
-  throw IllegalArgumentException(
-    "Value must be a reference to a ${type.tagName} resource type. '$value'"
-  )
+@SuppressLint("SimpleDateFormat")
+@JvmOverloads
+fun parseDate(value: String, format: String = "MM/dd/yyyy", def: Long = 0L): Long {
+  if (value.isDigitsOnly()) {
+    return value.toLong()
+  }
+  val formatter = SimpleDateFormat(format)
+  return try {
+    formatter.parse(value)!!.time
+  } catch (err: Throwable) {
+    log.warn("Unable to parse date (format='$format')", value)
+    def
+  }
 }

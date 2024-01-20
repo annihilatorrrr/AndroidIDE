@@ -18,46 +18,49 @@
 package com.itsaky.androidide.inflater
 
 import androidx.appcompat.app.AppCompatActivity
-import com.itsaky.androidide.inflater.internal.utils.endParse
-import com.itsaky.androidide.inflater.internal.utils.startParse
+import com.google.common.truth.Truth.assertThat
+import com.itsaky.androidide.inflater.utils.endParse
+import com.itsaky.androidide.inflater.utils.startParse
 import com.itsaky.androidide.lookup.Lookup
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.projects.api.AndroidModule
 import com.itsaky.androidide.projects.builder.BuildService
-import com.itsaky.androidide.tooling.api.messages.InitializeProjectMessage
+import com.itsaky.androidide.projects.util.findAppModule
 import com.itsaky.androidide.tooling.testing.ToolingApiTestLauncher
-import java.io.File
+import kotlinx.coroutines.runBlocking
 import org.junit.Ignore
 import org.robolectric.Robolectric
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Ignore("Test utility provider")
 object XmlInflaterTest {
 
-  private var init: Boolean = false
+  private var init = AtomicBoolean(false)
   internal val activity by lazy { Robolectric.buildActivity(AppCompatActivity::class.java).get() }
 
   fun initIfNeeded() {
-    if (init) {
+    if (init.get()) {
       return
     }
 
-    val (server, project) =
-      ToolingApiTestLauncher().launchServer(implDir = "../build-tools/tooling-api-impl")
-    server.initialize(InitializeProjectMessage(File("../tests/test-project").absolutePath)).get()
+    val (_, project, result) =
+      ToolingApiTestLauncher().launchServer()
+    assertThat(result?.isSuccessful).isTrue()
 
-    Lookup.DEFAULT.register(BuildService.KEY_PROJECT_PROXY, project)
-    ProjectManager.setupProject()
-    init = true
+    Lookup.getDefault().register(BuildService.KEY_PROJECT_PROXY, project)
+    runBlocking { IProjectManager.getInstance().setupProject(project) }
+    init.set(true)
   }
 }
 
 fun inflaterTest(block: (AndroidModule) -> Unit) {
   XmlInflaterTest.initIfNeeded()
-  startParse(ProjectManager.app!!)
-  block(ProjectManager.app!!)
+  val app = findAppModule()!!
+  startParse(app)
+  block(app)
   endParse()
 }
 
-fun requiresActivity(block: (AppCompatActivity) -> Unit) {
-  block(XmlInflaterTest.activity)
+fun requiresActivity(block: AppCompatActivity.() -> Unit) {
+  XmlInflaterTest.activity.block()
 }

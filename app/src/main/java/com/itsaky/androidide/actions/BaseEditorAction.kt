@@ -20,7 +20,7 @@ package com.itsaky.androidide.actions
 import android.content.Context
 import android.graphics.drawable.Drawable
 import androidx.core.content.ContextCompat
-import com.itsaky.androidide.views.editor.IDEEditor
+import com.itsaky.androidide.editor.ui.IDEEditor
 
 /** @author Akash Yadav */
 abstract class BaseEditorAction : EditorActionItem {
@@ -33,6 +33,7 @@ abstract class BaseEditorAction : EditorActionItem {
   override var location: ActionItem.Location = ActionItem.Location.EDITOR_TEXT_ACTIONS
 
   override fun prepare(data: ActionData) {
+    super.prepare(data)
     getEditor(data)
       ?: kotlin.run {
         visible = false

@@ -22,9 +22,10 @@ import com.itsaky.androidide.lsp.java.compiler.JavaCompilerService
 import com.itsaky.androidide.lsp.java.utils.FindHelper
 import com.itsaky.androidide.models.Location
 import com.itsaky.androidide.models.Position
-import com.sun.source.util.Trees
+import com.itsaky.androidide.progress.ICancelChecker
+import openjdk.source.util.Trees
 import java.nio.file.Path
-import javax.lang.model.element.Element
+import jdkx.lang.model.element.Element
 
 /**
  * Provides definition for local elements.
@@ -35,8 +36,8 @@ class LocalDefinitionProvider(
   position: Position,
   completingFile: Path,
   compiler: JavaCompilerService,
-  settings: IServerSettings,
-) : IJavaDefinitionProvider(position, completingFile, compiler, settings) {
+  settings: IServerSettings, cancelChecker: ICancelChecker,
+) : IJavaDefinitionProvider(position, completingFile, compiler, settings, cancelChecker) {
 
   override fun doFindDefinition(element: Element): List<Location> {
     return compiler.compile(file).get {
@@ -44,7 +45,7 @@ class LocalDefinitionProvider(
       val path = trees.getPath(element)
       if (path == null) {
         log.error("TreePath of element is null. Cannot find definition.", "Element is", element)
-        emptyList<Location>()
+        return@get emptyList<Location>()
       }
 
       var name = element.simpleName
@@ -52,7 +53,8 @@ class LocalDefinitionProvider(
         name = element.enclosingElement.simpleName
       }
 
-      listOf(FindHelper.location(it, path, name))
+      abortIfCancelled()
+      return@get listOf(FindHelper.location(it, path, name))
     }
   }
 }

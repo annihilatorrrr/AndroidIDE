@@ -17,7 +17,7 @@
 
 package com.itsaky.androidide.utils;
 
-import com.itsaky.androidide.models.LogLine;
+import static com.itsaky.androidide.utils.LogTagUtils.trimTagIfNeeded;
 
 /**
  * {@link ILogger} implementation for the JVM.
@@ -33,16 +33,21 @@ public class JvmLogger extends ILogger {
   }
 
   @Override
-  protected void doLog(Priority priority, String message) {
-    final var log = new LogLine(priority, TAG, message);
+  protected void doLog(Level level, String message) {
     if (interceptor != null) {
-      interceptor.onLog(log);
+      interceptor.onLog(level, TAG, message);
     } else {
-      System.err.println(log.toSimpleString());
+      System.err.printf(
+          "%-25s %-2s %s%n",
+          trimTagIfNeeded(TAG, 25),
+          level.levelChar,
+          message
+      );
     }
   }
 
   public interface LogInterceptor {
-    void onLog(LogLine line);
+
+    void onLog(Level level, String tag, String message);
   }
 }

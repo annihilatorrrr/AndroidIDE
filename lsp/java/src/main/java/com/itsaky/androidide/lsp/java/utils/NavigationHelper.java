@@ -34,25 +34,35 @@
 
 package com.itsaky.androidide.lsp.java.utils;
 
+import androidx.annotation.Nullable;
 import com.itsaky.androidide.lsp.java.compiler.CompileTask;
 import com.itsaky.androidide.lsp.java.visitors.FindNameAt;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.TreePath;
-import com.sun.source.util.Trees;
+import com.itsaky.androidide.progress.ICancelChecker;
+import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.util.TreePath;
+import openjdk.source.util.Trees;
 
 import java.nio.file.Path;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.Modifier;
+import jdkx.lang.model.element.Element;
+import jdkx.lang.model.element.Modifier;
 
 public class NavigationHelper {
 
-  public static Element findElement(CompileTask task, Path file, int line, int column) {
+  @Nullable
+  public static Element findElement(CompileTask task, Path file, int line, int column, ICancelChecker cancelChecker) {
     Trees trees = Trees.instance(task.task);
     for (CompilationUnitTree root : task.roots) {
+      if (cancelChecker != null) {
+        cancelChecker.abortIfCancelled();
+      }
+
       if (root.getSourceFile().toUri().equals(file.toUri())) {
         long cursor = root.getLineMap().getPosition(line, column);
         TreePath path = new FindNameAt(task).scan(root, cursor);
+        if (cancelChecker != null) {
+          cancelChecker.abortIfCancelled();
+        }
         if (path == null) {
           return null;
         }

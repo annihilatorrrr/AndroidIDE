@@ -24,19 +24,18 @@ import static com.itsaky.androidide.resources.R.string;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-
 import com.blankj.utilcode.util.FileIOUtils;
 import com.blankj.utilcode.util.FileUtils;
-import com.itsaky.androidide.EditorActivity;
+import com.itsaky.androidide.activities.editor.EditorHandlerActivity;
 import com.itsaky.androidide.adapters.DiagnosticsAdapter;
 import com.itsaky.androidide.adapters.SearchListAdapter;
+import com.itsaky.androidide.editor.ui.IDEEditor;
 import com.itsaky.androidide.fragments.sheets.ProgressSheet;
-import com.itsaky.androidide.interfaces.EditorActivityProvider;
 import com.itsaky.androidide.lsp.api.ILanguageClient;
 import com.itsaky.androidide.lsp.models.CodeActionItem;
-import com.itsaky.androidide.lsp.models.Command;
 import com.itsaky.androidide.lsp.models.DiagnosticItem;
 import com.itsaky.androidide.lsp.models.DiagnosticResult;
+import com.itsaky.androidide.lsp.models.PerformCodeActionParams;
 import com.itsaky.androidide.lsp.models.ShowDocumentParams;
 import com.itsaky.androidide.lsp.models.ShowDocumentResult;
 import com.itsaky.androidide.lsp.models.TextEdit;
@@ -46,13 +45,13 @@ import com.itsaky.androidide.models.Location;
 import com.itsaky.androidide.models.Range;
 import com.itsaky.androidide.models.SearchResult;
 import com.itsaky.androidide.tasks.TaskExecutor;
+import com.itsaky.androidide.ui.CodeEditorView;
+import com.itsaky.androidide.utils.FlashbarActivityUtilsKt;
+import com.itsaky.androidide.utils.FlashbarUtilsKt;
 import com.itsaky.androidide.utils.ILogger;
 import com.itsaky.androidide.utils.LSPUtils;
-import com.itsaky.androidide.views.editor.CodeEditorView;
-import com.itsaky.androidide.views.editor.IDEEditor;
-import com.itsaky.toaster.ToastUtilsKt;
-import com.itsaky.toaster.Toaster;
-
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer;
+import io.github.rosemoe.sora.text.Content;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -64,12 +63,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
-
-import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer;
-import io.github.rosemoe.sora.text.Content;
 import kotlin.Unit;
 
-/** AndroidIDE specific implementation of the LanguageClient */
+/**
+ * AndroidIDE specific implementation of the LanguageClient
+ */
 public class IDELanguageClientImpl implements ILanguageClient {
 
   public static final int MAX_DIAGNOSTIC_FILES = 10;
@@ -77,17 +75,17 @@ public class IDELanguageClientImpl implements ILanguageClient {
   protected static final ILogger LOG = ILogger.newInstance("AbstractLanguageClient");
   private static IDELanguageClientImpl mInstance;
   private final Map<File, List<DiagnosticItem>> diagnostics = new HashMap<>();
-  protected EditorActivityProvider activityProvider;
+  protected EditorHandlerActivity activity;
 
-  private IDELanguageClientImpl(EditorActivityProvider provider) {
-    setActivityProvider(provider);
+  private IDELanguageClientImpl(EditorHandlerActivity provider) {
+    setActivity(provider);
   }
 
-  public void setActivityProvider(EditorActivityProvider provider) {
-    this.activityProvider = provider;
+  public void setActivity(EditorHandlerActivity provider) {
+    this.activity = provider;
   }
 
-  public static IDELanguageClientImpl initialize(EditorActivityProvider provider) {
+  public static IDELanguageClientImpl initialize(EditorHandlerActivity provider) {
     if (mInstance != null) {
       throw new IllegalStateException("Client is already initialized");
     }
@@ -106,31 +104,36 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
 
   public static void shutdown() {
+    if (mInstance != null) {
+      mInstance.activity = null;
+    }
     mInstance = null;
   }
 
   public static boolean isInitialized() {
     return mInstance != null;
   }
-  
+
   @Override
   public void publishDiagnostics(DiagnosticResult result) {
-    if (result == DiagnosticResult.NO_UPDATE) {
+    if (result == DiagnosticResult.NO_UPDATE || !canUseActivity()) {
       // No update is expected
       return;
     }
 
     boolean error = result == null;
-    activity().handleDiagnosticsResultVisibility(error || result.getDiagnostics().isEmpty());
+    activity.handleDiagnosticsResultVisibility(error || result.getDiagnostics().isEmpty());
 
     if (error) {
       return;
     }
 
     File file = result.getFile().toFile();
-    if (!file.exists() || !file.isFile()) return;
+    if (!file.exists() || !file.isFile()) {
+      return;
+    }
 
-    final var editorView = activity().getEditorForFile(file);
+    final var editorView = activity.getEditorForFile(file);
     if (editorView != null) {
       final var editor = editorView.getEditor();
       if (editor != null) {
@@ -148,12 +151,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
     }
 
     diagnostics.put(file, result.getDiagnostics());
-    activity().setDiagnosticsAdapter(newDiagnosticsAdapter());
-  }
-
-  protected EditorActivity activity() {
-    if (activityProvider == null) return null;
-    return activityProvider.provide();
+    activity.setDiagnosticsAdapter(newDiagnosticsAdapter());
   }
 
   @Nullable
@@ -163,54 +161,54 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
 
   @Override
-  public void performCodeAction(File file, CodeActionItem actionItem) {
-    final var editor = activity().getEditorForFile(file);
-    if (editor != null) {
-      performCodeAction(editor.getEditor(), actionItem);
+  public void performCodeAction(PerformCodeActionParams params) {
+    if (params == null) {
+      return;
     }
-  }
 
-  /**
-   * Perform the given {@link CodeActionItem}
-   *
-   * @param editor The {@link IDEEditor} that invoked the code action request. This is required to
-   *     reduce the time finding the code action from the edits.
-   * @param action The action to perform
-   */
-  public void performCodeAction(IDEEditor editor, CodeActionItem action) {
-    if (activity() == null || editor == null || action == null) {
+    final var action = params.getAction();
+    if (!canUseActivity()) {
       LOG.error(
           "Unable to perform code action",
-          "activity=" + activity(),
-          "editor=" + editor,
+          "activity=" + null,
           "action=" + action);
-      ToastUtilsKt.toast(string.msg_cannot_perform_fix, Toaster.Type.ERROR);
+      FlashbarUtilsKt.flashError(string.msg_cannot_perform_fix);
+      return;
+    }
+
+    final var currentEditor = this.activity.getCurrentEditor();
+    final var editor = currentEditor != null ? currentEditor.getEditor() : null;
+
+    if (!params.getAsync()) {
+      applyActionEdits(editor, action);
+      if (editor != null) {
+        action.getCommand();
+        editor.executeCommand(action.getCommand());
+      }
       return;
     }
 
     final ProgressSheet progress = new ProgressSheet();
     progress.setSubMessageEnabled(false);
-    progress.setWelcomeTextEnabled(false);
     progress.setCancelable(false);
-    progress.setMessage(activity().getString(string.msg_performing_actions));
-    progress.show(activity().getSupportFragmentManager(), "quick_fix_progress");
+    progress.setMessage(this.activity.getString(string.msg_performing_actions));
+    progress.show(this.activity.getSupportFragmentManager(), "quick_fix_progress");
 
     TaskExecutor.executeAsyncProvideError(
-        () -> performCodeActionAsync(editor, action),
+        () -> applyActionEdits(editor, action),
         (result, throwable) -> {
           progress.dismiss();
           if (result == null || throwable != null || !result) {
             LOG.error(
                 "Unable to perform code action", "result=" + result, "throwable=" + throwable);
-            ToastUtilsKt.toast(string.msg_cannot_perform_fix, Toaster.Type.ERROR);
-          } else {
+            FlashbarActivityUtilsKt.flashError(this.activity, string.msg_cannot_perform_fix);
+          } else if (editor != null) {
             editor.executeCommand(action.getCommand());
           }
         });
   }
 
-  private Boolean performCodeActionAsync(final IDEEditor editor, final CodeActionItem action) {
-    LOG.debug("Performing code action:", action);
+  private Boolean applyActionEdits(@Nullable final IDEEditor editor, final CodeActionItem action) {
     final var changes = action.getChanges();
     if (changes.isEmpty()) {
       return Boolean.FALSE;
@@ -229,7 +227,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
 
       for (TextEdit edit : change.getEdits()) {
         final String editorFilepath =
-            editor.getFile() == null ? "" : editor.getFile().getAbsolutePath();
+            editor == null || editor.getFile() == null ? "" : editor.getFile().getAbsolutePath();
         if (file.getAbsolutePath().equals(editorFilepath)) {
           // Edit is in the same editor which requested the code action
           editInEditor(editor, edit);
@@ -241,8 +239,8 @@ public class IDELanguageClientImpl implements ILanguageClient {
             editInEditor(openedFrag.getEditor(), edit);
           } else {
             // Edit is in some other file which is not opened
-            // We should open that file and perform the edit
-            openedFrag = activity().openFile(file);
+            // open that file and perform the edit
+            openedFrag = activity.openFile(file);
             if (openedFrag != null && openedFrag.getEditor() != null) {
               editInEditor(openedFrag.getEditor(), edit);
             }
@@ -255,7 +253,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
 
   private void editInEditor(final IDEEditor editor, final TextEdit edit) {
-    activity()
+    activity
         .runOnUiThread(
             () -> {
               final Range range = edit.getRange();
@@ -272,11 +270,10 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
 
   @Override
-  public ShowDocumentResult showDocument(
-      ShowDocumentParams params) {
+  public ShowDocumentResult showDocument(ShowDocumentParams params) {
     boolean success = false;
     final var result = new ShowDocumentResult(false);
-    if (activity() == null) {
+    if (!canUseActivity()) {
       return result;
     }
 
@@ -285,7 +282,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
       if (file.exists() && file.isFile() && FileUtils.isUtf8(file)) {
         final var range = params.getSelection();
         var frag =
-            activity().getEditorAtIndex(activity().getBinding().tabs.getSelectedTabPosition());
+            activity.getEditorAtIndex(activity.getBinding().tabs.getSelectedTabPosition());
         if (frag != null
             && frag.getFile() != null
             && frag.getEditor() != null
@@ -296,7 +293,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
             frag.getEditor().setSelection(range);
           }
         } else {
-          activity().openFileAndSelect(file, range);
+          activity.openFileAndSelect(file, range);
         }
         success = true;
       }
@@ -307,13 +304,15 @@ public class IDELanguageClientImpl implements ILanguageClient {
   }
 
   public DiagnosticsAdapter newDiagnosticsAdapter() {
-    return new DiagnosticsAdapter(mapAsGroup(this.diagnostics), activity());
+    return new DiagnosticsAdapter(mapAsGroup(this.diagnostics), activity);
   }
 
   private List<DiagnosticGroup> mapAsGroup(Map<File, List<DiagnosticItem>> map) {
     final var groups = new ArrayList<DiagnosticGroup>();
     var diagnosticMap = map;
-    if (diagnosticMap == null || diagnosticMap.size() <= 0) return groups;
+    if (diagnosticMap == null || diagnosticMap.size() == 0) {
+      return groups;
+    }
 
     if (diagnosticMap.size() > 10) {
       LOG.warn("Limiting the diagnostics to 10 files");
@@ -322,7 +321,9 @@ public class IDELanguageClientImpl implements ILanguageClient {
 
     for (File file : diagnosticMap.keySet()) {
       var fileDiagnostics = diagnosticMap.get(file);
-      if (fileDiagnostics == null || fileDiagnostics.size() <= 0) continue;
+      if (fileDiagnostics == null || fileDiagnostics.size() == 0) {
+        continue;
+      }
 
       // Trim the diagnostics list if we have too many diagnostic items.
       // Including a lot of diagnostic items will result in UI lag when they are shown
@@ -370,7 +371,7 @@ public class IDELanguageClientImpl implements ILanguageClient {
 
   @NonNull
   private Set<File> findOpenFiles(final Set<File> files, final int max) {
-    final var openedFiles = activity().getViewModel().getOpenedFiles();
+    final var openedFiles = activity.getEditorViewModel().getOpenedFiles();
     final var result = new TreeSet<File>();
     for (int i = 0; i < openedFiles.size(); i++) {
       final var opened = openedFiles.get(i);
@@ -384,19 +385,22 @@ public class IDELanguageClientImpl implements ILanguageClient {
     return result;
   }
 
-  /** Called by {@link IDEEditor IDEEditor} to show locations in EditorActivity */
+  /**
+   * Called by {@link IDEEditor IDEEditor} to show locations in EditorActivity
+   */
+  @Override
   public void showLocations(List<Location> locations) {
 
     // Cannot show anything if the activity() is null
-    if (activity() == null) {
+    if (!canUseActivity()) {
       return;
     }
 
     boolean error = locations == null || locations.isEmpty();
-    activity().handleSearchResultVisibility(error);
+    activity.handleSearchResultVisibility(error);
 
     if (error) {
-      activity()
+      activity
           .setSearchResultAdapter(
               new SearchListAdapter(Collections.emptyMap(), this::noOp, this::noOp));
       return;
@@ -411,11 +415,16 @@ public class IDELanguageClientImpl implements ILanguageClient {
         }
 
         final File file = loc.getFile().toFile();
-        if (!file.exists() || !file.isFile()) continue;
+        if (!file.exists() || !file.isFile()) {
+          continue;
+        }
         var frag = findEditorByFile(file);
         Content content;
-        if (frag != null && frag.getEditor() != null) content = frag.getEditor().getText();
-        else content = new Content(FileIOUtils.readFile2String(file));
+        if (frag != null && frag.getEditor() != null) {
+          content = frag.getEditor().getText();
+        } else {
+          content = new Content(FileIOUtils.readFile2String(file));
+        }
         final List<SearchResult> matches =
             results.containsKey(file) ? results.get(file) : new ArrayList<>();
         Objects.requireNonNull(matches)
@@ -437,13 +446,21 @@ public class IDELanguageClientImpl implements ILanguageClient {
       }
     }
 
-    activity().handleSearchResults(results);
+    activity.handleSearchResults(results);
   }
 
   private CodeEditorView findEditorByFile(File file) {
-    return activity().getEditorForFile(file);
+    return activity.getEditorForFile(file);
   }
-  
+
+  private boolean canUseActivity() {
+    return activity != null
+        && !activity.isFinishing()
+        && !activity.isDestroyed()
+        && !activity.getSupportFragmentManager().isDestroyed()
+        && !activity.getSupportFragmentManager().isStateSaved();
+  }
+
   private Unit noOp(final Object obj) {
     return Unit.INSTANCE;
   }

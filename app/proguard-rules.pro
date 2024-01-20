@@ -5,9 +5,10 @@
 -dontobfuscate
 
 -keep class javax.** { *; }
+-keep class jdkx.** { *; }
 
 # keep javac classes
--keep class com.sun.** { *; }
+-keep class openjdk.** { *; }
 
 # Android builder model interfaces
 -keep class com.android.** { *; }
@@ -18,16 +19,22 @@
 # Builder model implementations
 -keep class com.itsaky.androidide.builder.model.** { *; }
 
-# JSONRpc
--keep class org.eclipse.lemminx.uriresolver.URIResolverExtensionManager { *; }
+# Eclipse
+-keep class org.eclipse.** { *; }
 
 # JAXP
 -keep class jaxp.** { *; }
 -keep class org.w3c.** { *; }
 -keep class org.xml.** { *; }
 
+# Services
+-keep @com.google.auto.service.AutoService class ** {
+}
+-keepclassmembers class ** {
+    @com.google.auto.service.AutoService <methods>;
+}
+
 # EventBus
--keepattributes *Annotation*
 -keepclassmembers class ** {
     @org.greenrobot.eventbus.Subscribe <methods>;
 }
@@ -50,8 +57,8 @@
 -keep class * extends com.itsaky.androidide.lsp.java.providers.completion.IJavaCompletionProvider {
     <init>(...);
 }
--keep class com.itsaky.androidide.editor.IEditor { *; }
--keep class * extends com.itsaky.androidide.inflater.IAttributeAdapter { *; }
+-keep class com.itsaky.androidide.editor.api.IEditor { *; }
+-keep class * extends com.itsaky.androidide.inflater.IViewAdapter { *; }
 -keep class * extends com.itsaky.androidide.inflater.drawable.IDrawableParser {
     <init>(...);
     android.graphics.drawable.Drawable parse();
@@ -70,5 +77,53 @@
 }
 
 # Used in preferences
--keep enum com.itsaky.androidide.lsp.xml.models.EmptyElements { *; }
+-keep enum org.eclipse.lemminx.dom.builder.EmptyElements { *; }
 -keep enum com.itsaky.androidide.xml.permissions.Permission { *; }
+
+# Lots of native methods in tree-sitter
+# There are some fields as well that are accessed from native field
+-keepclasseswithmembers class ** {
+    native <methods>;
+}
+
+-keep class com.itsaky.androidide.treesitter.** { *; }
+
+# Retrofit 2
+-dontwarn retrofit2.**
+-keep class retrofit2.** { *; }
+
+-keepclasseswithmembers class * {
+    @retrofit2.http.* <methods>;
+}
+
+# OkHttp3
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+-dontwarn okhttp3.**
+
+# Stat uploader
+-keep class com.itsaky.androidide.stats.** { *; }
+
+# Gson
+-keep class * extends com.google.gson.TypeAdapter
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
+-keepclassmembers,allowobfuscation class * {
+  @com.google.gson.annotations.SerializedName <fields>;
+}
+
+## Retain generic signatures of TypeToken and its subclasses with R8 version 3.0 and higher.
+-keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
+-keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
+
+## Themes
+-keep enum com.itsaky.androidide.ui.themes.IDETheme {
+  *;
+}
+
+## Contributor models - deserialized with GSON
+-keep class * implements com.itsaky.androidide.contributors.Contributor {
+  *;
+}

@@ -43,6 +43,7 @@ import com.itsaky.androidide.lsp.models.CompletionResult;
 import com.itsaky.androidide.lsp.models.CompletionsKt;
 import com.itsaky.androidide.lsp.models.MatchLevel;
 
+import com.itsaky.androidide.progress.ICancelChecker;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -52,16 +53,14 @@ import java.nio.file.Path;
  * @author Akash Yadav
  */
 public interface ICompletionProvider {
-
-  int MIN_MATCH_RATIO = CompletionsKt.DEFAULT_MIN_MATCH_RATIO;
-
+  
   default boolean canComplete(Path file) {
     return file != null && Files.exists(file) && !Files.isDirectory(file);
   }
 
   /** Abort the completion process if cancelled. */
   default void abortCompletionIfCancelled() {
-    final var checker = Lookup.DEFAULT.lookup(ICompletionCancelChecker.class);
+    final var checker = Lookup.getDefault().lookup(ICancelChecker.class);
     if (checker != null) {
       checker.abortIfCancelled();
     }

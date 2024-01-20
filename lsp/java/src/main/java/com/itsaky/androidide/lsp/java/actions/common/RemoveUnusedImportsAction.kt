@@ -14,7 +14,7 @@ import io.github.rosemoe.sora.widget.CodeEditor
 class RemoveUnusedImportsAction : BaseJavaCodeAction() {
 
   private val log = ILogger.newInstance(javaClass.simpleName)
-  override val id: String = "lsp_java_remove_unused_imports"
+  override val id: String = "ide.editor.lsp.java.removeUnusedImports"
   override var label: String = ""
   override val titleTextRes: Int = string.action_remove_unused_imports
 
@@ -24,7 +24,7 @@ class RemoveUnusedImportsAction : BaseJavaCodeAction() {
       return
     }
 
-    if (!hasRequiredData(data, CodeEditor::class.java)) {
+    if (!data.hasRequiredData(CodeEditor::class.java)) {
       markInvisible()
       return
     }
@@ -33,10 +33,10 @@ class RemoveUnusedImportsAction : BaseJavaCodeAction() {
     enabled = true
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val watch = com.itsaky.androidide.utils.StopWatch("Remove unused imports")
     return try {
-      val editor = requireEditor(data)
+      val editor = data.requireEditor()
       val content = editor.text
       val output = RemoveUnusedImports.removeUnusedImports(content.toString())
       watch.log()
@@ -49,7 +49,7 @@ class RemoveUnusedImportsAction : BaseJavaCodeAction() {
 
   override fun postExec(data: ActionData, result: Any) {
     if (result is String && result.isNotEmpty()) {
-      val editor = requireEditor(data)
+      val editor = data.requireEditor()
       editor.setText(result)
     }
   }

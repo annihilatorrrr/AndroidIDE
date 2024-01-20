@@ -29,16 +29,16 @@ import com.itsaky.androidide.actions.EditorRelatedAction
  *
  * @author Akash Yadav
  */
-class ExpandSelectionAction() : EditorRelatedAction() {
-  override val id: String = "editor_expandSelection"
+class ExpandSelectionAction(context: Context, override val order: Int) : EditorRelatedAction() {
+  override val id: String = "ide.editor.code.actions.expandSelection"
   override var location: ActionItem.Location = ActionItem.Location.EDITOR_TEXT_ACTIONS
 
-  constructor(context: Context) : this() {
+  init {
     label = context.getString(R.string.action_expand_selection)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_expand_selection)
   }
 
-  override fun execAction(data: ActionData): Any {
-    return getEditor(data)!!.expandSelection()
+  override suspend fun execAction(data: ActionData): Any {
+    return data.getEditor()?.expandSelection() ?: false
   }
 }

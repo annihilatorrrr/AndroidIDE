@@ -1,44 +1,54 @@
 package com.itsaky.androidide.fragments
 
+import android.content.DialogInterface
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.viewModels
 import com.blankj.utilcode.util.ThreadUtils
 import com.google.android.material.progressindicator.LinearProgressIndicator
-import com.itsaky.androidide.EditorActivity
-import com.itsaky.androidide.PreferencesActivity
-import com.itsaky.androidide.TerminalActivity
+import com.itsaky.androidide.activities.MainActivity
+import com.itsaky.androidide.activities.PreferencesActivity
+import com.itsaky.androidide.activities.TerminalActivity
 import com.itsaky.androidide.adapters.MainActionsListAdapter
 import com.itsaky.androidide.app.BaseApplication
+import com.itsaky.androidide.app.BaseIDEActivity
+import com.itsaky.androidide.common.databinding.LayoutDialogProgressBinding
 import com.itsaky.androidide.databinding.FragmentMainBinding
-import com.itsaky.androidide.databinding.LayoutDialogProgressBinding
-import com.itsaky.androidide.fragments.WizardFragment.OnProjectCreatedListener
+import com.itsaky.androidide.lsp.java.utils.CancelChecker
 import com.itsaky.androidide.models.MainScreenAction
 import com.itsaky.androidide.preferences.databinding.LayoutDialogTextInputBinding
-import com.itsaky.androidide.projects.ProjectManager.projectPath
-import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.resources.R.string
-import com.itsaky.androidide.tasks.executeAsync
+import com.itsaky.androidide.tasks.executeAsyncProvideError
+import com.itsaky.androidide.tasks.runOnUiThread
 import com.itsaky.androidide.utils.DialogUtils
 import com.itsaky.androidide.utils.Environment
 import com.itsaky.androidide.utils.ILogger
-import com.itsaky.toaster.toastError
-import com.itsaky.toaster.toastSuccess
+import com.itsaky.androidide.utils.flashError
+import com.itsaky.androidide.utils.flashSuccess
+import com.itsaky.androidide.viewmodel.MainViewModel
+import com.termux.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ProgressMonitor
 import java.io.File
+import java.util.concurrent.CancellationException
 
-class MainFragment : BaseFragment(), OnProjectCreatedListener {
+class MainFragment : BaseFragment() {
+
+  private val viewModel by viewModels<MainViewModel>(
+    ownerProducer = { requireActivity() })
   private var binding: FragmentMainBinding? = null
 
   private val log = ILogger.newInstance("MainFragment")
 
-  override fun onCreateView(
-    inflater: LayoutInflater,
-    container: ViewGroup?,
+  override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
     savedInstanceState: Bundle?
   ): View {
     binding = FragmentMainBinding.inflate(inflater, container, false)
@@ -47,39 +57,38 @@ class MainFragment : BaseFragment(), OnProjectCreatedListener {
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
-    val createProject =
-      MainScreenAction(string.create_project, R.drawable.ic_add) { showCreateProject() }
-    val openProject =
-      MainScreenAction(string.msg_open_existing_project, R.drawable.ic_folder) { pickDirectory() }
-    val cloneGitRepository =
-      MainScreenAction(string.git_clone_repo, R.drawable.ic_git) { cloneGitRepo() }
-    val openTerminal =
-      MainScreenAction(string.btn_terminal, R.drawable.ic_terminal) {
-        startActivity(Intent(requireActivity(), TerminalActivity::class.java))
-      }
-    val preferences =
-      MainScreenAction(string.msg_preferences, R.drawable.ic_settings) { gotoPreferences() }
-    val sponsor =
-      MainScreenAction(string.btn_sponsor, R.drawable.ic_sponsor) {
-        BaseApplication.getBaseInstance().openSponsors()
-      }
-    val docs =
-      MainScreenAction(string.btn_docs, R.drawable.ic_docs) {
-        BaseApplication.getBaseInstance().openDocs()
+
+    val actions = MainScreenAction.all().also { actions ->
+      val onClick = { action: MainScreenAction, _: View ->
+        when (action.id) {
+          MainScreenAction.ACTION_CREATE_PROJECT -> showCreateProject()
+          MainScreenAction.ACTION_OPEN_PROJECT -> pickDirectory()
+          MainScreenAction.ACTION_CLONE_REPO -> cloneGitRepo()
+          MainScreenAction.ACTION_OPEN_TERMINAL -> startActivity(
+            Intent(requireActivity(), TerminalActivity::class.java))
+
+          MainScreenAction.ACTION_PREFERENCES -> gotoPreferences()
+          MainScreenAction.ACTION_DONATE -> BaseApplication.getBaseInstance().openDonationsPage()
+          MainScreenAction.ACTION_DOCS -> BaseApplication.getBaseInstance().openDocs()
+        }
       }
 
-    binding!!.actions.adapter =
-      MainActionsListAdapter(
-        listOf(
-          createProject,
-          openProject,
-          cloneGitRepository,
-          openTerminal,
-          preferences,
-          docs,
-          sponsor
-        )
-      )
+      actions.forEach { action ->
+        action.onClick = onClick
+
+        if (action.id == MainScreenAction.ACTION_OPEN_TERMINAL) {
+          action.onLongClick = { _: MainScreenAction, _: View ->
+            val intent = Intent(requireActivity(), TerminalActivity::class.java).apply {
+              putExtra(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, true)
+            }
+            startActivity(intent)
+            true
+          }
+        }
+      }
+    }
+
+    binding!!.actions.adapter = MainActionsListAdapter(actions)
   }
 
   override fun onDestroyView() {
@@ -92,18 +101,11 @@ class MainFragment : BaseFragment(), OnProjectCreatedListener {
   }
 
   private fun showCreateProject() {
-    val wizardFragment = WizardFragment()
-    wizardFragment.setOnProjectCreatedListener(this)
-    parentFragmentManager
-      .beginTransaction()
-      .add(com.itsaky.androidide.R.id.container, wizardFragment, WizardFragment.TAG)
-      .addToBackStack(null)
-      .commit()
+    viewModel.setScreen(MainViewModel.SCREEN_TEMPLATE_LIST)
   }
 
-  override fun openProject(root: File) {
-    projectPath = root.absolutePath
-    startActivity(Intent(requireActivity(), EditorActivity::class.java))
+  fun openProject(root: File) {
+    (requireActivity() as MainActivity).openProject(root)
   }
 
   private fun cloneGitRepo() {
@@ -147,44 +149,56 @@ class MainFragment : BaseFragment(), OnProjectCreatedListener {
     val repoName = url.substringAfterLast('/').substringBeforeLast(".git")
     val targetDir = File(Environment.PROJECTS_DIR, repoName)
 
-    var git: Git? = null
-    val future =
-      executeAsync(
-        {
-          return@executeAsync Git.cloneRepository()
-            .setURI(url)
-            .setDirectory(targetDir)
-            .setProgressMonitor(GitCloneProgressMonitor(binding.progress, binding.message))
-            .call()
-            .also { git = it }
-        },
-        {}
-      )
+    val progress = GitCloneProgressMonitor(binding.progress, binding.message)
+    val coroutineScope = (activity as? BaseIDEActivity?)?.activityScope ?: viewLifecycleScope
+
+    var getDialog: Function0<AlertDialog?>? = null
+
+    val cloneJob = coroutineScope.launch(Dispatchers.IO) {
+
+      val git = try {
+        Git.cloneRepository()
+          .setURI(url)
+          .setDirectory(targetDir)
+          .setProgressMonitor(progress)
+          .call()
+      } catch (err: Throwable) {
+        if (!progress.isCancelled) {
+          err.printStackTrace()
+          withContext(Dispatchers.Main) {
+            getDialog?.invoke()?.also { if (it.isShowing) it.dismiss() }
+            showCloneError(err)
+          }
+        }
+        null
+      }
+
+      try {
+        git?.close()
+      } finally {
+        val success = git != null
+        withContext(Dispatchers.Main) {
+          getDialog?.invoke()?.also { dialog ->
+            if (dialog.isShowing) dialog.dismiss()
+            if (success) flashSuccess(string.git_clone_success)
+          }
+        }
+      }
+    }
 
     builder.setPositiveButton(android.R.string.cancel) { iface, _ ->
       iface.dismiss()
-      git?.close()
-      future.cancel(true)
+      progress.cancel()
+      cloneJob.cancel(CancellationException("Cancelled by user"))
     }
 
     val dialog = builder.show()
-
-    future.whenComplete { result, error ->
-      ThreadUtils.runOnUiThread {
-        dialog?.dismiss()
-        result?.close()
-        if (result == null || error != null) {
-          if (!future.isCancelled) {
-            showCloneError(error)
-          }
-        } else toastSuccess(string.git_clone_success)
-      }
-    }
+    getDialog = { dialog }
   }
 
   private fun showCloneError(error: Throwable?) {
     if (error == null) {
-      toastError(string.git_clone_failed)
+      flashError(string.git_clone_failed)
       return
     }
 
@@ -199,30 +213,37 @@ class MainFragment : BaseFragment(), OnProjectCreatedListener {
     startActivity(Intent(requireActivity(), PreferencesActivity::class.java))
   }
 
-  companion object {
-    const val TAG = "MainFragmentTag"
-  }
-
   // TODO(itsaky) : Improve this implementation
-  class GitCloneProgressMonitor(val progress: LinearProgressIndicator, val message: TextView) :
-    ProgressMonitor {
+  class GitCloneProgressMonitor(val progress: LinearProgressIndicator,
+    val message: TextView
+  ) : ProgressMonitor {
+
+    private var cancelled = false
+
+    fun cancel() {
+      cancelled = true
+    }
 
     override fun start(totalTasks: Int) {
-      ThreadUtils.runOnUiThread { progress.max = totalTasks }
+      runOnUiThread { progress.max = totalTasks }
     }
 
     override fun beginTask(title: String?, totalWork: Int) {
-      ThreadUtils.runOnUiThread { message.text = title }
+      runOnUiThread { message.text = title }
     }
 
     override fun update(completed: Int) {
-      ThreadUtils.runOnUiThread { progress.progress = completed }
+      runOnUiThread { progress.progress = completed }
+    }
+
+    override fun showDuration(enabled: Boolean) {
+      // no-op
     }
 
     override fun endTask() {}
 
     override fun isCancelled(): Boolean {
-      return Thread.currentThread().isInterrupted
+      return cancelled || Thread.currentThread().isInterrupted
     }
   }
 }

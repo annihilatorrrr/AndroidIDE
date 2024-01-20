@@ -24,11 +24,11 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.EditorRelatedAction
 
 /** @author Akash Yadav */
-class UndoAction() : EditorRelatedAction() {
+class UndoAction(context: Context, override val order: Int) : EditorRelatedAction() {
 
-  override val id: String = "editor_undo"
+  override val id: String = "ide.editor.code.text.undo"
 
-  constructor(context: Context) : this() {
+  init {
     label = context.getString(R.string.undo)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_undo)
   }
@@ -40,15 +40,15 @@ class UndoAction() : EditorRelatedAction() {
       return
     }
 
-    val editor = getEditor(data)!!
+    val editor = data.getEditor()!!
     enabled = editor.canUndo()
   }
 
-  override fun execAction(data: ActionData): Any {
-    val editor = getEditor(data)
+  override suspend fun execAction(data: ActionData): Any {
+    val editor = data.getEditor()
     return if (editor != null) {
       editor.undo()
-      getActivity(data)?.invalidateOptionsMenu()
+      data.getActivity()?.invalidateOptionsMenu()
       true
     } else {
       false

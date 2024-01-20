@@ -26,24 +26,26 @@ import com.itsaky.androidide.lsp.java.models.CompilationRequest
 import com.itsaky.androidide.lsp.java.models.PartialReparseRequest
 import com.itsaky.androidide.lsp.java.visitors.PrintingVisitor
 import com.itsaky.androidide.models.Range
-import com.sun.source.tree.ExpressionStatementTree
-import com.sun.source.tree.LiteralTree
-import com.sun.source.tree.Tree
-import com.sun.tools.javac.tree.JCTree.JCCompilationUnit
-import com.sun.tools.javac.tree.JCTree.JCMethodDecl
-import com.sun.tools.javac.tree.JCTree.JCMethodInvocation
-import com.sun.tools.javac.tree.JCTree.JCVariableDecl
-import com.sun.tools.javac.tree.TreeScanner
+import openjdk.source.tree.ExpressionStatementTree
+import openjdk.source.tree.LiteralTree
+import openjdk.source.tree.Tree
+import openjdk.tools.javac.tree.JCTree.JCCompilationUnit
+import openjdk.tools.javac.tree.JCTree.JCMethodDecl
+import openjdk.tools.javac.tree.JCTree.JCMethodInvocation
+import openjdk.tools.javac.tree.JCTree.JCVariableDecl
+import openjdk.tools.javac.tree.TreeScanner
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import javax.lang.model.type.ArrayType
+import jdkx.lang.model.type.ArrayType
 
 /** @author Akash Yadav */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.DEFAULT_VALUE_STRING)
+@Ignore("Partial reparser is currently unused")
 class PartialReparserImplTest {
 
   @Before
@@ -73,10 +75,12 @@ class PartialReparserImplTest {
           )
         )
         .run { PrintingVisitor().scan(it.root() as JCCompilationUnit) }
+      val changedText = contents!!.insert(192, "trim().").toString()
       dispatchEvent(
         DocumentChangeEvent(
           file!!,
-          contents!!.insert(192, "trim().").toString(),
+          changedText,
+          changedText,
           2,
           INSERT,
           "trim().".length,

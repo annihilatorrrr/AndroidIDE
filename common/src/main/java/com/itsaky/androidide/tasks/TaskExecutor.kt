@@ -16,7 +16,10 @@
  */
 package com.itsaky.androidide.tasks
 
+import android.app.ProgressDialog
+import android.content.Context
 import com.blankj.utilcode.util.ThreadUtils
+import com.itsaky.androidide.common.R
 import com.itsaky.androidide.utils.ILogger
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
@@ -70,6 +73,23 @@ object TaskExecutor {
   }
 }
 
+fun <R : Any?> executeAsync(callable: () -> R?) {
+  executeAsync(callable) {}
+}
+
+@JvmOverloads
+@Suppress("DEPRECATION")
+inline fun <T> Context.executeWithProgress(
+  cancellable: Boolean = false,
+  block: (ProgressDialog) -> T
+): T {
+  val dialog = ProgressDialog(this)
+  dialog.setMessage(getString(R.string.please_wait))
+  dialog.setCancelable(cancellable)
+  dialog.show()
+  return block(dialog)
+}
+
 fun <R : Any?> executeAsync(callable: () -> R?, callback: (R?) -> Unit): CompletableFuture<R?> =
   TaskExecutor.executeAsync({ callable() }) { callback(it) }
 
@@ -77,4 +97,8 @@ fun <R : Any?> executeAsyncProvideError(
   callable: () -> R?,
   callback: (R?, Throwable?) -> Unit
 ): CompletableFuture<R?> =
-  TaskExecutor.executeAsyncProvideError({ callable() }) { result, error -> callback(result, error) }
+  TaskExecutor.executeAsyncProvideError(callable, callback)
+
+fun runOnUiThread(action : () -> Unit) {
+  ThreadUtils.runOnUiThread(action)
+}

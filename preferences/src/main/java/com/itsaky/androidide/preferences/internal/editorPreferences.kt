@@ -18,7 +18,6 @@
 package com.itsaky.androidide.preferences.internal
 
 const val COMPLETIONS_MATCH_LOWER = "idepref_editor_completions_matchLower"
-const val GOOGLE_CODE_STYLE = "idepref_editor_java_googleCodeStyle"
 
 const val FLAG_WS_LEADING = "idepref_editor_wsLeading"
 const val FLAG_WS_TRAILING = "idepref_editor_wsTrailing"
@@ -36,6 +35,13 @@ const val USE_MAGNIFER = "idepref_editor_use_magnifier"
 const val USE_ICU = "idepref_editor_useIcu"
 const val USE_SOFT_TAB = "idepref_editor_useSoftTab"
 const val USE_CUSTOM_FONT = "idepref_editor_useCustomFont"
+const val DELETE_EMPTY_LINES = "idepref_editor_deleteEmptyLines"
+const val DELETE_TABS_ON_BACKSPACE = "idepref_editor_deleteTab"
+const val STICKY_SCROLL_ENABLED = "idepref_editor_stickyScrollEnabled"
+const val PIN_LINE_NUMBERS = "idepref_editor_pinLineNumbers"
+
+const val COLOR_SCHEME = "idepref_editor_colorScheme"
+const val DEFAULT_COLOR_SCHEME = "default"
 
 var completionsMatchLower: Boolean
   get() = prefManager.getBoolean(COMPLETIONS_MATCH_LOWER, false)
@@ -132,3 +138,31 @@ var useCustomFont: Boolean
   set(value) {
     prefManager.putBoolean(USE_CUSTOM_FONT, value)
   }
+
+var colorScheme: String
+  get() = prefManager.getString(COLOR_SCHEME, DEFAULT_COLOR_SCHEME)
+  set(value) {
+    prefManager.putString(COLOR_SCHEME, value)
+  }
+
+var deleteEmptyLines: Boolean
+  get() = prefManager.getBoolean(DELETE_EMPTY_LINES, true)
+  set(value) {
+    prefManager.putBoolean(DELETE_EMPTY_LINES, value)
+  }
+
+var deleteTabsOnBackspace: Boolean
+  get() = prefManager.getBoolean(DELETE_TABS_ON_BACKSPACE, true)
+  set(value) {
+    prefManager.putBoolean(DELETE_TABS_ON_BACKSPACE, value)
+  }
+
+var stickyScrollEnabled: Boolean
+  get() = prefManager.getBoolean(STICKY_SCROLL_ENABLED, false)
+  set(value) {
+    prefManager.putBoolean(STICKY_SCROLL_ENABLED, value)
+  }
+
+var pinLineNumbers: Boolean
+  get() = prefManager.getBoolean(PIN_LINE_NUMBERS, true)
+  set(value) = prefManager.putBoolean(PIN_LINE_NUMBERS, value)

@@ -19,6 +19,8 @@ package com.itsaky.androidide.lsp.java.rewrite;
 
 import androidx.annotation.NonNull;
 
+import com.itsaky.androidide.preferences.internal.EditorPreferencesKt;
+import com.itsaky.androidide.preferences.utils.EditorUtilKt;
 import com.itsaky.androidide.utils.ILogger;
 import com.itsaky.androidide.lsp.java.compiler.CompileTask;
 import com.itsaky.androidide.lsp.java.compiler.CompilerProvider;
@@ -27,12 +29,12 @@ import com.itsaky.androidide.lsp.java.utils.EditHelper;
 import com.itsaky.androidide.models.Position;
 import com.itsaky.androidide.models.Range;
 import com.itsaky.androidide.lsp.models.TextEdit;
-import com.sun.source.tree.ClassTree;
-import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.tree.VariableTree;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.Trees;
+import openjdk.source.tree.ClassTree;
+import openjdk.source.tree.MethodTree;
+import openjdk.source.tree.Tree;
+import openjdk.source.tree.VariableTree;
+import openjdk.source.util.SourcePositions;
+import openjdk.source.util.Trees;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -43,8 +45,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 
-import javax.lang.model.element.Modifier;
-import javax.lang.model.element.TypeElement;
+import jdkx.lang.model.element.Modifier;
+import jdkx.lang.model.element.TypeElement;
 
 public class GenerateRecordConstructor extends Rewrite {
 
@@ -55,6 +57,7 @@ public class GenerateRecordConstructor extends Rewrite {
     this.className = className;
   }
 
+  @NonNull
   @Override
   public Map<Path, TextEdit[]> rewrite(@NonNull CompilerProvider compiler) {
     LOG.info("Generate default constructor for " + className + "...");
@@ -87,8 +90,8 @@ public class GenerateRecordConstructor extends Rewrite {
               .append(initializers)
               .append("\n}");
           String string = buf.toString();
-          int indent = EditHelper.indent(task.task, task.root(), typeTree) + 4;
-          string = string.replaceAll("\n", "\n" + EditHelper.repeatSpaces(indent));
+          int indent = EditHelper.indent(task.task, task.root(), typeTree) + EditorPreferencesKt.getTabSize();
+          string = string.replaceAll("\n", "\n" + EditorUtilKt.indentationString(indent));
           string = string + "\n\n";
           Position insert = insertPoint(task, typeTree);
           TextEdit[] edits = {new TextEdit(new Range(insert, insert), string)};

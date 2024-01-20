@@ -24,25 +24,23 @@ import com.itsaky.androidide.actions.newDialogBuilder
 import com.itsaky.androidide.actions.requireFile
 import com.itsaky.androidide.actions.requirePath
 import com.itsaky.androidide.javac.services.util.JavaDiagnosticUtils
-import com.itsaky.androidide.lsp.api.ILanguageServerRegistry
 import com.itsaky.androidide.lsp.java.JavaCompilerProvider
-import com.itsaky.androidide.lsp.java.JavaLanguageServer
-import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.lsp.java.actions.BaseJavaCodeAction
 import com.itsaky.androidide.lsp.java.models.DiagnosticCode
 import com.itsaky.androidide.lsp.java.rewrite.AddImport
 import com.itsaky.androidide.lsp.java.rewrite.Rewrite
 import com.itsaky.androidide.lsp.models.CodeActionItem
 import com.itsaky.androidide.lsp.models.DiagnosticItem
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
+import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.utils.ILogger
-import javax.tools.Diagnostic
-import javax.tools.JavaFileObject
+import jdkx.tools.Diagnostic
+import jdkx.tools.JavaFileObject
 
 /** @author Akash Yadav */
 class AddImportAction : BaseJavaCodeAction() {
 
-  override val id: String = "lsp_java_addImport"
+  override val id: String = "ide.editor.lsp.java.diagnostics.addImport"
   override var label: String = ""
   private val diagnosticCode = DiagnosticCode.NOT_IMPORTED.id
   private val log = ILogger.newInstance("AddImportAction")
@@ -52,7 +50,7 @@ class AddImportAction : BaseJavaCodeAction() {
   override fun prepare(data: ActionData) {
     super.prepare(data)
 
-    if (!visible || !hasRequiredData(data, DiagnosticItem::class.java)) {
+    if (!visible || !data.hasRequiredData(DiagnosticItem::class.java)) {
       markInvisible()
       return
     }
@@ -63,9 +61,9 @@ class AddImportAction : BaseJavaCodeAction() {
       return
     }
 
-    val file = requireFile(data)
+    val file = data.requireFile()
     val module =
-      ProjectManager.findModuleForFile(file)
+      IProjectManager.getInstance().findModuleForFile(file, false)
         ?: run {
           markInvisible()
           return
@@ -81,36 +79,23 @@ class AddImportAction : BaseJavaCodeAction() {
       return
     }
 
-    var found = false
-    val simpleName = jcDiagnostic.args[1]
-    for (name in compiler.publicTopLevelTypes()) {
-      var klass = name
-
-      // This will be true in a test environment
-      if (klass.contains("/")) {
-        klass = name.replace('/', '.')
-      }
-
-      if (klass.endsWith(".$simpleName")) {
-        found = true
-        // There is at least one class to import
-        break
-      }
-    }
+    val found =
+      jcDiagnostic.args[1]?.toString()?.let { compiler.findQualifiedNames(it, true).isNotEmpty() }
+        ?: false
 
     visible = found
     enabled = found
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     @Suppress("UNCHECKED_CAST")
     val diagnostic =
       JavaDiagnosticUtils.asUnwrapper(
         data.get(DiagnosticItem::class.java)!!.extra as Diagnostic<out JavaFileObject>
       )!!
-    val file = requireFile(data)
+    val file = data.requireFile()
     val module =
-      ProjectManager.findModuleForFile(file)
+      IProjectManager.getInstance().findModuleForFile(file, false)
         ?: run {
           markInvisible()
           return Any()
@@ -132,7 +117,7 @@ class AddImportAction : BaseJavaCodeAction() {
       }
 
       titles.add(klass)
-      rewrites.add(AddImport(requirePath(data), klass))
+      rewrites.add(AddImport(data.requirePath(), klass))
     }
 
     if (rewrites.isEmpty()) {
@@ -149,19 +134,16 @@ class AddImportAction : BaseJavaCodeAction() {
       return
     }
 
-    val file = requireFile(data)
+    val file = data.requireFile()
     val module =
-      ProjectManager.findModuleForFile(file)
+      IProjectManager.getInstance().findModuleForFile(file, false)
         ?: run {
           markInvisible()
           return
         }
 
     val compiler = JavaCompilerProvider.get(module)
-    val server =
-      ILanguageServerRegistry.getDefault().getServer(JavaLanguageServer.SERVER_ID)
-        as JavaLanguageServer
-    val client = server.client ?: return
+    val client = data.getLanguageClient() ?: return
     val actions = mutableListOf<CodeActionItem>()
     val titles = result.first as List<String>
     val rewrites = result.second as List<Rewrite>
@@ -169,23 +151,24 @@ class AddImportAction : BaseJavaCodeAction() {
     for (index in rewrites.indices) {
       val name = titles[index]
       val rewrite = rewrites[index]
-      val action = rewrite.asCodeActions(compiler, name)
-      actions.add(action)
+      rewrite.asCodeActions(compiler, name)?.let { actions.add(it) }
     }
 
     when (actions.size) {
       0 -> {
         log.warn("No rewrites found. Cannot perform action")
       }
+
       1 -> {
-        client.performCodeAction(file, actions[0])
+        client.performCodeAction(actions[0])
       }
+
       else -> {
         val builder = newDialogBuilder(data)
         builder.setTitle(label)
         builder.setItems(toArray(titles, String::class.java)) { d, w ->
           d.dismiss()
-          client.performCodeAction(file, actions[w])
+          client.performCodeAction(actions[w])
         }
         builder.show()
       }

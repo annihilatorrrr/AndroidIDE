@@ -20,13 +20,9 @@ package com.itsaky.androidide.lsp.java.providers.completion
 import com.itsaky.androidide.lsp.api.IServerSettings
 import com.itsaky.androidide.lsp.api.describeSnippet
 import com.itsaky.androidide.lsp.java.compiler.CompileTask
-import com.itsaky.androidide.lsp.java.compiler.CompilerProvider
 import com.itsaky.androidide.lsp.java.compiler.JavaCompilerService
 import com.itsaky.androidide.lsp.java.edits.MultipleClassImportEditHandler
-import com.itsaky.androidide.lsp.java.parser.ParseTask
-import com.itsaky.androidide.lsp.java.utils.EditHelper
-import com.itsaky.androidide.lsp.java.utils.EditHelper.repeatSpaces
-import com.itsaky.androidide.lsp.java.utils.FindHelper
+import com.itsaky.androidide.lsp.java.models.JavaCompletionItem
 import com.itsaky.androidide.lsp.java.utils.JavaPoetUtils.Companion.buildMethod
 import com.itsaky.androidide.lsp.java.utils.JavaPoetUtils.Companion.print
 import com.itsaky.androidide.lsp.java.utils.ScopeHelper
@@ -36,27 +32,22 @@ import com.itsaky.androidide.lsp.models.InsertTextFormat.SNIPPET
 import com.itsaky.androidide.lsp.models.MatchLevel
 import com.itsaky.androidide.lsp.models.MatchLevel.NO_MATCH
 import com.itsaky.androidide.progress.ProgressManager.Companion.abortIfCancelled
-import com.itsaky.androidide.projects.FileManager
 import com.squareup.javapoet.MethodSpec.Builder
-import com.sun.source.tree.ClassTree
-import com.sun.source.tree.MethodTree
-import com.sun.source.tree.Tree.Kind.CLASS
-import com.sun.source.util.TreePath
-import com.sun.source.util.Trees
+import jdkx.lang.model.element.ElementKind.METHOD
+import jdkx.lang.model.element.ExecutableElement
+import jdkx.lang.model.element.Modifier.FINAL
+import jdkx.lang.model.element.Modifier.PRIVATE
+import jdkx.lang.model.element.Modifier.STATIC
+import jdkx.lang.model.type.DeclaredType
+import openjdk.source.tree.ClassTree
+import openjdk.source.tree.Tree.Kind.CLASS
+import openjdk.source.util.TreePath
+import openjdk.source.util.Trees
 import java.nio.file.Path
-import java.util.*
-import java.util.function.*
-import javax.lang.model.element.ElementKind.METHOD
-import javax.lang.model.element.ExecutableElement
-import javax.lang.model.element.Modifier.FINAL
-import javax.lang.model.element.Modifier.PRIVATE
-import javax.lang.model.element.Modifier.STATIC
-import javax.lang.model.element.TypeElement
-import javax.lang.model.type.DeclaredType
-import javax.tools.JavaFileObject
+import java.util.function.Predicate
 
 /**
- * Provides completions using [com.sun.source.tree.Scope].
+ * Provides completions using [openjdk.source.tree.Scope].
  *
  * @author Akash Yadav
  */
@@ -162,8 +153,6 @@ class ScopeCompletionProvider(
 
     // Print the method details and the annotations
     // Print the method details and the annotations
-    val indent =
-      EditHelper.indent(FileManager.getDocumentContents(file), cursor.toInt())
     val builder: Builder
     try {
       builder = buildMethod(method, types, type)
@@ -174,17 +163,16 @@ class ScopeCompletionProvider(
 
     val imports = mutableSetOf<String>()
     val methodSpec = builder.build()
-    var insertText = print(methodSpec, imports, false)
-    insertText = insertText.replace("\n", "\n${repeatSpaces(indent)}")
+    val insertText = print(methodSpec, imports, false)
 
     abortIfCancelled()
     abortCompletionIfCancelled()
 
-    val item = CompletionItem()
-    item.setLabel(methodSpec.name)
-    item.kind = com.itsaky.androidide.lsp.models.CompletionItemKind.METHOD
+    val item = JavaCompletionItem()
+    item.ideLabel = methodSpec.name
+    item.completionKind = com.itsaky.androidide.lsp.models.CompletionItemKind.METHOD
     item.detail = method.returnType.toString() + " " + method
-    item.sortText = item.label.toString()
+    item.ideSortText = item.ideLabel
     item.insertText = insertText
     item.insertTextFormat = SNIPPET
     item.snippetDescription = describeSnippet(partial)
@@ -195,23 +183,7 @@ class ScopeCompletionProvider(
     }
 
     imports.removeIf { "java.lang." == it || fileImports.contains(it) || filePackage == it }
-    item.additionalEditHandler =
-      MultipleClassImportEditHandler(imports, fileImports, file)
+    item.additionalEditHandler = MultipleClassImportEditHandler(imports, fileImports, file)
     return item
-  }
-
-  private fun findSource(
-    compiler: CompilerProvider,
-    task: CompileTask,
-    method: ExecutableElement,
-  ): MethodTree? {
-    val superClass = method.enclosingElement as TypeElement
-    val superClassName = superClass.qualifiedName.toString()
-    val methodName = method.simpleName.toString()
-    val erasedParameterTypes = FindHelper.erasedParameterTypes(task, method)
-    val sourceFile: Optional<JavaFileObject> = compiler.findAnywhere(superClassName)
-    if (!sourceFile.isPresent) return null
-    val parse: ParseTask = compiler.parse(sourceFile.get())
-    return FindHelper.findMethod(parse, superClassName, methodName, erasedParameterTypes)
   }
 }

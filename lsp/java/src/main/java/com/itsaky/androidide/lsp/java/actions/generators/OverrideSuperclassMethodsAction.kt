@@ -25,7 +25,6 @@ import com.itsaky.androidide.actions.newDialogBuilder
 import com.itsaky.androidide.actions.requireFile
 import com.itsaky.androidide.actions.requirePath
 import com.itsaky.androidide.lsp.java.JavaCompilerProvider
-import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.lsp.java.actions.BaseJavaCodeAction
 import com.itsaky.androidide.lsp.java.compiler.CompileTask
 import com.itsaky.androidide.lsp.java.compiler.CompilerProvider
@@ -36,23 +35,26 @@ import com.itsaky.androidide.lsp.java.utils.FindHelper
 import com.itsaky.androidide.lsp.java.utils.JavaParserUtils
 import com.itsaky.androidide.lsp.java.utils.MethodPtr
 import com.itsaky.androidide.lsp.java.visitors.FindTypeDeclarationAt
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.models.Position
+import com.itsaky.androidide.preferences.internal.tabSize
+import com.itsaky.androidide.preferences.utils.indentationString
+import com.itsaky.androidide.projects.IProjectManager
+import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.utils.ILogger
-import com.itsaky.toaster.Toaster
-import com.itsaky.toaster.toast
-import com.sun.source.tree.MethodTree
-import com.sun.source.util.Trees
+import com.itsaky.androidide.utils.flashError
 import io.github.rosemoe.sora.widget.CodeEditor
+import jdkx.lang.model.element.ElementKind
+import jdkx.lang.model.element.ExecutableElement
+import jdkx.lang.model.element.Modifier
+import jdkx.lang.model.element.TypeElement
+import jdkx.lang.model.type.DeclaredType
+import jdkx.lang.model.type.ExecutableType
+import jdkx.tools.JavaFileObject
+import openjdk.source.tree.MethodTree
+import openjdk.source.util.Trees
 import java.util.Arrays
 import java.util.Optional
 import java.util.concurrent.CompletableFuture
-import javax.lang.model.element.ElementKind
-import javax.lang.model.element.ExecutableElement
-import javax.lang.model.element.Modifier
-import javax.lang.model.element.TypeElement
-import javax.lang.model.type.DeclaredType
-import javax.lang.model.type.ExecutableType
-import javax.tools.JavaFileObject
 
 /**
  * Allows the user to override multiple methods from superclass at once.
@@ -60,8 +62,9 @@ import javax.tools.JavaFileObject
  * @author Akash Yadav
  */
 class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
+
   override val titleTextRes: Int = R.string.action_override_superclass_methods
-  override val id: String = "lsp_java_overrideSuperclassMethods"
+  override val id: String = "ide.editor.lsp.java.generator.overrideSuperclassMethods"
   override var label: String = ""
   private val log = ILogger.newInstance(javaClass.simpleName)
   private var position: Long = -1
@@ -71,11 +74,10 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
     if (
       !visible ||
-        !hasRequiredData(
-          data,
-          com.itsaky.androidide.models.Range::class.java,
-          CodeEditor::class.java
-        )
+      !data.hasRequiredData(
+        com.itsaky.androidide.models.Range::class.java,
+        CodeEditor::class.java
+      )
     ) {
       markInvisible()
       return
@@ -85,11 +87,12 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
     enabled = true
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val range = data[com.itsaky.androidide.models.Range::class.java]!!
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return Any())
-    val file = requirePath(data)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return Any())
+    val file = data.requirePath()
 
     return compiler.compile(file).get { task ->
       // 1-based line and column index
@@ -148,10 +151,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
   override fun postExec(data: ActionData, result: Any) {
     if (result !is List<*> || result.isEmpty() || position < 0) {
       log.warn("Unable to find any overridable method")
-      toast(
-        data[Context::class.java]!!.getString(R.string.msg_no_overridable_methods),
-        Toaster.Type.ERROR
-      )
+      flashError(data[Context::class.java]!!.getString(R.string.msg_no_overridable_methods))
       return
     }
 
@@ -173,23 +173,20 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       dialog.dismiss()
 
       if (checkedMethods.isEmpty()) {
-        toast(
-          data[Context::class.java]!!.getString(R.string.msg_no_methods_selected),
-          Toaster.Type.ERROR
-        )
+        flashError(data[Context::class.java]!!.getString(R.string.msg_no_methods_selected))
         return@setPositiveButton
       }
 
       CompletableFuture.runAsync { overrideMethods(data, checkedMethods) }
-        .whenComplete { _, error,
+        .whenComplete {
+            _, error,
           ->
           if (error != null) {
             log.error("An error occurred overriding methods")
 
             ThreadUtils.runOnUiThread {
-              toast(
-                data[Context::class.java]!!.getString(R.string.msg_cannot_override_methods),
-                Toaster.Type.ERROR
+              flashError(
+                data[Context::class.java]!!.getString(R.string.msg_cannot_override_methods)
               )
             }
           }
@@ -201,8 +198,9 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
 
   private fun overrideMethods(data: ActionData, checkedMethods: MutableList<MethodPtr>) {
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return)
-    val file = requirePath(data)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return)
+    val file = data.requirePath()
 
     compiler.compile(file).run { task ->
       val types = task.task.types
@@ -213,7 +211,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
       val typeFinder = FindTypeDeclarationAt(task.task)
       val classTree = typeFinder.scan(task.root(), position)
       val thisClass = trees.getElement(typeFinder.path) as TypeElement
-      val indent = EditHelper.indent(task.task, task.root(), classTree) + 4
+      val indent = EditHelper.indent(task.task, task.root(), classTree) + tabSize
       val fileImports = task.root(file).imports.map { it.qualifiedIdentifier.toString() }.toSet()
       val filePackage = task.root(file).`package`.packageName.toString()
 
@@ -224,7 +222,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
             pointer.className,
             pointer.methodName,
             pointer.erasedParameterTypes
-          )
+          ) ?: continue
 
         val thisDeclaredType = thisClass.asType() as DeclaredType
         val executableType = types.asMemberOf(thisDeclaredType, superMethod) as ExecutableType
@@ -239,7 +237,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
         val newImports = JavaParserUtils.collectImports(executableType)
         sb.append("\n")
         sb.append(method.toString())
-        sb.replace(Regex(Regex.escape("\n")), "\n${EditHelper.repeatSpaces(indent)}")
+        sb.replace(Regex(Regex.escape("\n")), "\n${indentationString(indent)}")
         sb.append("\n")
 
         newImports.removeIf {
@@ -264,12 +262,13 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
     data: ActionData,
     sb: StringBuilder,
     imports: MutableSet<String>,
-    position: com.itsaky.androidide.models.Position,
+    position: Position,
   ) {
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return)
     val editor = data[CodeEditor::class.java]!!
-    val file = requirePath(data)
+    val file = data.requirePath()
     val text = editor.text
 
     text.beginBatchEdit()
@@ -279,7 +278,7 @@ class OverrideSuperclassMethodsAction : BaseJavaCodeAction() {
     for (name in imports) {
       val rewrite = AddImport(file, name)
       val edits = rewrite.rewrite(compiler)[file]
-      if (edits == null || edits.isEmpty()) {
+      if (edits.isNullOrEmpty()) {
         continue
       }
 

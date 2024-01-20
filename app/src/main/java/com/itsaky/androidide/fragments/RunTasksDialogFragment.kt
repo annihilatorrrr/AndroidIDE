@@ -19,8 +19,10 @@ package com.itsaky.androidide.fragments
 
 import android.app.Dialog
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
+import android.util.DisplayMetrics
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -32,31 +34,30 @@ import androidx.core.view.updateLayoutParams
 import androidx.core.view.updateMargins
 import androidx.core.view.updatePadding
 import androidx.fragment.app.viewModels
-import androidx.recyclerview.widget.RecyclerView
 import androidx.transition.TransitionManager
 import com.blankj.utilcode.util.ThreadUtils
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.transition.MaterialSharedAxis
 import com.itsaky.androidide.R.string
-import com.itsaky.androidide.adapters.RunTasksCategoryAdapter
 import com.itsaky.androidide.adapters.RunTasksListAdapter
 import com.itsaky.androidide.databinding.LayoutRunTaskBinding
 import com.itsaky.androidide.databinding.LayoutRunTaskDialogBinding
 import com.itsaky.androidide.lookup.Lookup
 import com.itsaky.androidide.models.Checkable
-import com.itsaky.androidide.models.RunTasksCategory
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
+import com.itsaky.androidide.projects.api.GradleProject
 import com.itsaky.androidide.projects.builder.BuildService
 import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.tasks.executeAsync
-import com.itsaky.androidide.tooling.api.model.GradleTask
+import com.itsaky.androidide.tooling.api.models.GradleTask
 import com.itsaky.androidide.utils.ILogger
 import com.itsaky.androidide.utils.SingleTextWatcher
 import com.itsaky.androidide.utils.doOnApplyWindowInsets
+import com.itsaky.androidide.utils.flashError
+import com.itsaky.androidide.utils.flashInfo
 import com.itsaky.androidide.utils.updateSystemBarColors
 import com.itsaky.androidide.viewmodel.RunTasksViewModel
-import com.itsaky.toaster.toastInfo
 
 /**
  * A bottom sheet dialog fragment to show UI which allows the users to select and execute Gradle
@@ -85,7 +86,7 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
   }
 
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-    return object : BottomSheetDialog(requireContext(), theme) {
+    val dialog = object : BottomSheetDialog(requireContext(), theme) {
       override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         window?.apply {
@@ -95,10 +96,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
         findViewById<View>(com.google.android.material.R.id.container)?.apply {
           doOnApplyWindowInsets { view, insets, _, margins ->
             insets.getInsets(statusBars() or navigationBars()).apply {
-              view.updateLayoutParams<MarginLayoutParams> {
-                updateMargins(top = margins.top + top)
-              }
-              run.categories.apply {
+              view.updateLayoutParams<MarginLayoutParams> { updateMargins(top = margins.top + top) }
+              run.tasks.apply {
                 updatePadding(bottom = bottom)
                 clipToPadding = false
                 clipChildren = false
@@ -108,6 +107,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
         }
       }
     }
+    dialog.behavior.peekHeight = (getWindowHeight() * 0.7).toInt()
+    return dialog
   }
 
   override fun onCreateView(
@@ -130,22 +131,8 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
     }
 
     viewModel.observeQuery(viewLifecycleOwner) {
-      val adapter = run.categories.adapter
-      if (adapter !is RunTasksCategoryAdapter) {
-        return@observeQuery
-      }
-      for (index in 0 until viewModel.categories.size) {
-        val layout =
-          run.categories.layoutManager
-            ?.findViewByPosition(index)
-            ?.findViewById<RecyclerView>(com.itsaky.androidide.R.id.tasks)
-            ?: continue
-        val childAdapter = layout.adapter
-        if (childAdapter !is RunTasksListAdapter) {
-          continue
-        }
-        childAdapter.filter(it)
-      }
+      val adapter = run.tasks.adapter as? RunTasksListAdapter? ?: return@observeQuery
+      adapter.filter(it)
     }
 
     run.searchInput.editText?.addTextChangedListener(
@@ -162,7 +149,7 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
 
     binding.exec.setOnClickListener {
       if (viewModel.selected.isEmpty()) {
-        toastInfo(getString(string.msg_err_select_tasks))
+        requireActivity().flashInfo(getString(string.msg_err_select_tasks))
         return@setOnClickListener
       }
 
@@ -175,11 +162,16 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
 
       if (viewModel.displayedChild == CHILD_CONFIRMATION) {
         val buildService =
-          Lookup.DEFAULT.lookup(BuildService.KEY_BUILD_SERVICE)
+          Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
             ?: run {
               log.error("Cannot find build service")
               return@setOnClickListener
             }
+
+        if (!buildService.isToolingServerStarted()) {
+          flashError(R.string.msg_tooling_server_unavailable)
+          return@setOnClickListener
+        }
 
         val toRun = viewModel.selected.toTypedArray()
         buildService.executeTasks(*toRun)
@@ -192,11 +184,14 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
     viewModel.displayedChild = CHILD_LOADING
 
     executeAsync({
-      val rootProject =
-        ProjectManager.rootProject ?: return@executeAsync emptyList<Checkable<GradleTask>>()
-      val tasks = rootProject.tasks.map { Checkable(false, it) }.toMutableList()
-      tasks.addAll(rootProject.subModules.flatMap { it.tasks }.map { Checkable(false, it) })
-      return@executeAsync tasks
+      val project = IProjectManager.getInstance().rootProject
+        ?: return@executeAsync emptyList<Checkable<GradleTask>>()
+
+      return@executeAsync project.subProjects
+        .flatMap<GradleProject, GradleTask> { it.tasks }
+        .map<GradleTask, Checkable<GradleTask>> {
+          Checkable<GradleTask>(false, it)
+        }
     }) { tasks ->
       viewModel.tasks = tasks ?: emptyList()
       viewModel.displayedChild =
@@ -209,12 +204,19 @@ class RunTasksDialogFragment : BottomSheetDialogFragment() {
           viewModel.deselect(item.data.path)
         }
       }
-      viewModel.categories =
-        listOf(
-          RunTasksCategory(R.string.title_common, viewModel.commonTasks),
-          RunTasksCategory(R.string.title_all_tasks, viewModel.tasks)
-        )
-      run.categories.adapter = RunTasksCategoryAdapter(viewModel.categories, onCheckChanged)
+
+      run.tasks.adapter = RunTasksListAdapter(viewModel.tasks, onCheckChanged)
     }
+  }
+
+  private fun getWindowHeight(): Int {
+    val height = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      activity?.windowManager?.currentWindowMetrics?.bounds?.height()!!
+    } else {
+      val displayMetrics = DisplayMetrics()
+      activity?.windowManager?.defaultDisplay?.getMetrics(displayMetrics)
+      displayMetrics.heightPixels
+    }
+    return height
   }
 }

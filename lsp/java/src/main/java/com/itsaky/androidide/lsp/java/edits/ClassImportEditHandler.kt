@@ -32,7 +32,7 @@ import java.nio.file.Path
  * @param file The file in which this edit will be performed.
  * @author Akash Yadav
  */
-class ClassImportEditHandler(val imports: Set<String>, file: Path) : IJavaEditHandler(file) {
+class ClassImportEditHandler(val imports: Set<String>, file: Path) : AdvancedJavaEditHandler(file) {
 
   override fun performEdits(
     compiler: JavaCompilerService,
@@ -42,6 +42,9 @@ class ClassImportEditHandler(val imports: Set<String>, file: Path) : IJavaEditHa
     val data = completionItem.data as? ClassCompletionData ?: return
     val className = data.className
     val edits = EditHelper.addImportIfNeeded(compiler, file, imports, className)
-    RewriteHelper.performEdits(edits, editor)
+
+    if (edits.isNotEmpty()) {
+      RewriteHelper.performEdits(edits, editor)
+    }
   }
 }

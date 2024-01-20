@@ -45,6 +45,8 @@ import org.eclipse.lemminx.dom.DOMNode
 open class AttrCompletionProvider(provider: ICompletionProvider) :
   IXmlCompletionProvider(provider) {
 
+  private var attrHasNamespace = false
+
   override fun canProvideCompletions(pathData: ResourcePathData, type: NodeType): Boolean {
     return super.canProvideCompletions(pathData, type) && type == ATTRIBUTE
   }
@@ -62,6 +64,8 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
       if (attrAtCursor.name.contains(':')) {
         attrAtCursor.name.substringAfterLast(':')
       } else attrAtCursor.name
+
+    attrHasNamespace = newPrefix != attrAtCursor.name
 
     val namespace =
       attrAtCursor.namespaceURI
@@ -160,6 +164,7 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
             attr = ref,
             resPkg = pck,
             nsPrefix = pckPrefix,
+            hasNamespace = attrHasNamespace,
             matchLevel = matchLevel,
             partial = prefix
           )
@@ -174,7 +179,7 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
 
   protected open fun findNodeStyleables(node: DOMNode, styleables: ResourceGroup): Set<Styleable> {
     val nodeName = node.nodeName
-    val widgets = Lookup.DEFAULT.lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return emptySet()
+    val widgets = Lookup.getDefault().lookup(WidgetTable.COMPLETION_LOOKUP_KEY) ?: return emptySet()
 
     // Find the widget
     val widget =
@@ -194,8 +199,8 @@ open class AttrCompletionProvider(provider: ICompletionProvider) :
       // This must be called if and only if the tag name is qualified
       return findStyleablesForName(styleables, node, true)
     }
-  
-    log.info("Cannot find styleable entries for tag: $widget")
+
+    log.info("Cannot find styleable entries for tag: null")
     return emptySet()
   }
 

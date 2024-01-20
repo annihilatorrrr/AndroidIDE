@@ -25,8 +25,8 @@ import java.util.Comparator;
 class CompletionItemComparator {
   static int compare(CompletionItem one, CompletionItem two) {
     return Comparator.comparing(item -> ((CompletionItem) item).getMatchLevel().ordinal())
-        .thenComparing(item -> ((CompletionItem) item).getSortText())
-        .thenComparing(item -> ((CompletionItem) item).label)
+        .thenComparing(item -> ((CompletionItem) item).getIdeSortText())
+        .thenComparing(item -> ((CompletionItem) item).getIdeLabel())
         .compare(one, two);
   }
 }

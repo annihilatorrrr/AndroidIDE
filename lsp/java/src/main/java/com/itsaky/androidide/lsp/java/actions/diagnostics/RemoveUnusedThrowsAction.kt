@@ -27,12 +27,12 @@ import com.itsaky.androidide.lsp.java.actions.BaseJavaCodeAction
 import com.itsaky.androidide.lsp.java.models.DiagnosticCode
 import com.itsaky.androidide.lsp.java.rewrite.RemoveException
 import com.itsaky.androidide.lsp.java.utils.CodeActionUtils
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.utils.ILogger
 
 /** @author Akash Yadav */
 class RemoveUnusedThrowsAction : BaseJavaCodeAction() {
-  override val id: String = "lsp_java_removeUnusedThrows"
+  override val id: String = "ide.editor.lsp.java.diagnostics.removeUnusedThrows"
   override var label: String = ""
   private val diagnosticCode = DiagnosticCode.UNUSED_THROWS.id
   private val log = ILogger.newInstance(javaClass.simpleName)
@@ -44,7 +44,7 @@ class RemoveUnusedThrowsAction : BaseJavaCodeAction() {
 
     if (
       !visible ||
-        !hasRequiredData(data, com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)
+        !data.hasRequiredData( com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)
     ) {
       markInvisible()
       return
@@ -57,11 +57,12 @@ class RemoveUnusedThrowsAction : BaseJavaCodeAction() {
     }
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val d = data[com.itsaky.androidide.lsp.models.DiagnosticItem::class.java]!!
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return Any())
-    val file = requirePath(data)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return Any())
+    val file = data.requirePath()
     return compiler.compile(file).get { task ->
       val notThrown = CodeActionUtils.extractNotThrownExceptionName(d.message)
       val methodWithExtraThrow = CodeActionUtils.findMethod(task, d.range)

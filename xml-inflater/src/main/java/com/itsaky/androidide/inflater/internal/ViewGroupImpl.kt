@@ -17,7 +17,6 @@
 
 package com.itsaky.androidide.inflater.internal
 
-import android.graphics.RectF
 import android.view.ViewGroup
 import com.itsaky.androidide.inflater.IView
 import com.itsaky.androidide.inflater.IViewGroup
@@ -25,6 +24,8 @@ import com.itsaky.androidide.inflater.IViewGroup.OnHierarchyChangeListener
 
 open class ViewGroupImpl(file: LayoutFile, name: String, view: ViewGroup) :
   ViewImpl(file = file, name = name, view = view), IViewGroup {
+
+  internal var childrenModifiable = true
 
   protected val children = mutableListOf<IView>()
   protected val hierarchyChangeListeners = mutableListOf<OnHierarchyChangeListener>()
@@ -35,29 +36,45 @@ open class ViewGroupImpl(file: LayoutFile, name: String, view: ViewGroup) :
   override val view: ViewGroup
     get() = super.view as ViewGroup
 
+  override fun canModifyChildViews(): Boolean {
+    return this.childrenModifiable
+  }
+
   override fun addChild(view: IView) {
     addChild(-1, view)
   }
 
   override fun addChild(index: Int, view: IView) {
+    if (!canModifyChildViews()) {
+      throw UnsupportedOperationException("'$name' does not support adding child views.")
+    }
+
     if (view.parent != null) {
       throw IllegalStateException("View already has a parent")
     }
+    notifyBeforeViewAdded(view, index)
     val idx = if (index < 0) childCount else index
     this.children.add(idx, view)
     this.view.addView(view.view, idx)
     view.parent = this
-    notifyOnViewAdded(view)
+    notifyOnViewAdded(view, index)
   }
 
   override fun removeChild(view: IView) {
-    removeInternal(view)
+    if (!canModifyChildViews()) {
+      throw UnsupportedOperationException("'$name' does not support removing child views.")
+    }
+
+    val index = indexOfChild(view)
+    notifyBeforeViewRemoved(view, index)
+    this.view.removeView(view.view)
+    this.children.remove(view)
+    view.parent = null
+    notifyOnViewRemoved(view, index)
   }
 
-  override fun removeChild(index: Int): IView {
-    val existing = this.children.removeAt(index)
-    removeInternal(existing, false)
-    return existing
+  override fun removeChild(index: Int) {
+    removeChild(this.children[index])
   }
 
   override operator fun get(index: Int): IView {
@@ -65,7 +82,12 @@ open class ViewGroupImpl(file: LayoutFile, name: String, view: ViewGroup) :
   }
 
   override operator fun set(index: Int, view: IView): IView {
-    val existing = removeChild(index)
+    if (!canModifyChildViews()) {
+      throw UnsupportedOperationException("'$name' does not support updating child views.")
+    }
+
+    val existing = this.children[index]
+    removeChild(existing)
     addChild(index, view)
     return existing
   }
@@ -77,73 +99,52 @@ open class ViewGroupImpl(file: LayoutFile, name: String, view: ViewGroup) :
     }
   }
 
-  override fun computeViewIndex(x: Float, y: Float): Int {
-    val count = childCount
-    for (i in 0 until childCount) {
-      val child = this[i]
-      val rect = getViewRect(child)
-      if (rect.contains(x, y)) {
-        val top = topHalf(rect)
-        val bottom = bottomHalf(rect)
-        if (top.contains(x, y)) {
-          return 0.coerceAtLeast(i - 1)
-        } else if (bottom.contains(x, y)) {
-          return count.coerceAtMost(i + 1)
-        }
-      }
-    }
-    // If we don't find a suitable index, return the last index
-    return count
-  }
-  
   override fun addOnHierarchyChangeListener(listener: OnHierarchyChangeListener) {
     this.hierarchyChangeListeners.add(listener)
   }
-  
+
   override fun removeOnHierarchyChangeListener(listener: OnHierarchyChangeListener) {
     this.hierarchyChangeListeners.remove(listener)
   }
-  
-  protected open fun notifyOnViewAdded(child: IView) {
-    this.hierarchyChangeListeners.forEach {
-      it.onViewAdded(this, child)
-    }
-  }
-  
-  protected open fun notifyOnViewRemoved(child: IView) {
-    this.hierarchyChangeListeners.forEach {
-      it.onViewRemoved(this, child)
-    }
-  }
-  
-  private fun removeInternal(view: IView, removeFromList: Boolean = true) {
-    if (removeFromList) {
-      this.children.remove(view)
-    }
-    this.view.removeView(view.view)
-    view.parent = null
-    notifyOnViewRemoved(view)
+
+  override fun iterator(): Iterator<IView> {
+    return ViewIterator(immutable())
   }
 
-  private fun getViewRect(view: IView): RectF {
-    val v = view.view
-    val rect = RectF()
-    rect.left = v.left.toFloat()
-    rect.top = v.top.toFloat()
-    rect.right = rect.left + v.width
-    rect.bottom = rect.top + v.height
-    return rect
+  protected open fun notifyBeforeViewAdded(child: IView, index: Int) {
+    this.hierarchyChangeListeners.forEach { it.beforeViewAdded(this, child, index) }
   }
 
-  private fun topHalf(src: RectF): RectF {
-    val result = RectF(src)
-    result.bottom -= result.height() / 2
-    return src
+  protected open fun notifyBeforeViewRemoved(child: IView, index: Int) {
+    this.hierarchyChangeListeners.forEach { it.beforeViewRemoved(this, child, index) }
   }
 
-  private fun bottomHalf(src: RectF): RectF {
-    val result = RectF(src)
-    result.top += result.height() / 2
-    return src
+  protected open fun notifyOnViewAdded(child: IView, index: Int) {
+    this.hierarchyChangeListeners.forEach { it.onViewAdded(this, child, index) }
+  }
+
+  protected open fun notifyOnViewRemoved(child: IView, index: Int) {
+    this.hierarchyChangeListeners.forEach { it.onViewRemoved(this, child, index) }
+  }
+
+  override fun immutable(): IViewGroup {
+    return ImmutableViewGroupImpl(this)
+  }
+
+  private class ViewIterator(private val group: IViewGroup) : Iterator<IView> {
+
+    private var index = 0
+
+    override fun hasNext(): Boolean {
+      return index < group.childCount
+    }
+
+    override fun next(): IView {
+      if (index < 0 || index >= group.childCount) {
+        throw NoSuchElementException()
+      }
+
+      return group[index].also { ++index }
+    }
   }
 }

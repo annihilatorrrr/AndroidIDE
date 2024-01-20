@@ -60,6 +60,7 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
   protected lateinit var allNamespaces: Set<Pair<String, String>>
 
   companion object {
+
     const val NAMESPACE_PREFIX = "http://schemas.android.com/apk/res/"
     const val NAMESPACE_AUTO = "http://schemas.android.com/apk/res-auto"
   }
@@ -138,17 +139,18 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
   protected open fun createTagCompletionItem(
     simpleName: String,
     qualifiedName: String,
-    matchLevel: MatchLevel
+    matchLevel: MatchLevel,
+    isPlatformWidget: Boolean = false
   ): CompletionItem =
     CompletionItem().apply {
-      this.label = simpleName
+      this.ideLabel = simpleName
       this.detail = qualifiedName
-      this.sortText = label.toString()
-      this.insertText = qualifiedName
+      this.ideSortText = ideLabel
+      this.insertText = if (isPlatformWidget) simpleName else qualifiedName
       this.insertTextFormat = PLAIN_TEXT
       this.editHandler = TagEditHandler()
       this.matchLevel = matchLevel
-      this.kind = CLASS
+      this.completionKind = CLASS
       this.data = ClassCompletionData(className = qualifiedName)
     }
 
@@ -163,6 +165,7 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
     partial: String,
     resPkg: String,
     nsPrefix: String,
+    hasNamespace: Boolean,
     matchLevel: MatchLevel
   ): CompletionItem =
     CompletionItem().apply {
@@ -174,13 +177,14 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
       }
 
       val title = "$prefix${attr.name.entry!!}"
-      this.label = title
-      this.kind = FIELD
+      val insertText = if (hasNamespace) attr.name.entry!! else title
+      this.ideLabel = title
+      this.completionKind = FIELD
       this.detail = "From package '$resPkg'"
-      this.insertText = "$title=\"$0\""
+      this.insertText = "$insertText=\"$0\""
       this.insertTextFormat = SNIPPET
       this.snippetDescription = describeSnippet(partial)
-      this.sortText = label.toString()
+      this.ideSortText = ideLabel
       this.matchLevel = matchLevel
       this.command = Command("Trigger completion request", Command.TRIGGER_COMPLETION)
     }
@@ -211,11 +215,11 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
 
     val text = sb.toString()
     return CompletionItem().apply {
-      this.label = text
+      this.ideLabel = text
       this.detail = "From package '$pck'"
-      this.kind = VALUE
+      this.completionKind = VALUE
       this.overrideTypeText = type.uppercase()
-      this.sortText = if (pck == ResourceTableRegistry.PCK_ANDROID) "zzz$text" else text
+      this.ideSortText = if (pck == ResourceTableRegistry.PCK_ANDROID) "zzz$text" else text
       this.insertText = text
       this.insertTextFormat = PLAIN_TEXT
       this.editHandler = AttrValueEditHandler()
@@ -236,17 +240,20 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
     matchLevel: MatchLevel
   ): CompletionItem {
     return CompletionItem().apply {
-      this.label = name
+      this.ideLabel = name
       this.detail = if (pck.isBlank()) "" else "From package '$pck'"
-      this.kind = VALUE
-      this.sortText = "000$name"
+      this.completionKind = VALUE
+      this.ideSortText = "000$name"
       this.insertText = name
       this.editHandler = QualifiedValueEditHandler()
       this.matchLevel = matchLevel
     }
   }
 
-  protected open fun findResourceTables(nsUri: String): Set<ResourceTable> {
+  protected open fun findResourceTables(nsUri: String?): Set<ResourceTable> {
+    if (nsUri.isNullOrBlank()) {
+      return emptySet()
+    }
     if (nsUri == NAMESPACE_AUTO) {
       return findAllModuleResourceTables()
     }
@@ -259,7 +266,7 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
 
     if (pck == ResourceTableRegistry.PCK_ANDROID) {
       val platformResTable =
-        Lookup.DEFAULT.lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES)
+        Lookup.getDefault().lookup(ResourceTableRegistry.COMPLETION_FRAMEWORK_RES)
           ?: run {
             log.debug("No platform resource table is set")
             return emptySet()
@@ -279,7 +286,7 @@ abstract class IXmlCompletionProvider(private val provider: ICompletionProvider)
   }
 
   protected open fun findAllModuleResourceTables(): Set<ResourceTable> {
-    val lookup = Lookup.DEFAULT
+    val lookup = Lookup.getDefault()
     val sourceResTables = lookup.lookup(ResourceTableRegistry.COMPLETION_MODULE_RES) ?: emptySet()
     val depResTables = lookup.lookup(ResourceTableRegistry.COMPLETION_DEP_RES) ?: emptySet()
     return mutableSetOf<ResourceTable>().also {

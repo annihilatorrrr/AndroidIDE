@@ -19,68 +19,86 @@ package com.itsaky.androidide.actions.file
 
 import android.content.Context
 import androidx.core.content.ContextCompat
-import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.EditorRelatedAction
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.models.SaveResult
+import com.itsaky.androidide.projects.ProjectManagerImpl
+import com.itsaky.androidide.resources.R
 import com.itsaky.androidide.utils.ILogger
-import com.itsaky.toaster.Toaster
-import com.itsaky.toaster.toast
+import com.itsaky.androidide.utils.flashError
+import com.itsaky.androidide.utils.flashSuccess
 
 /** @author Akash Yadav */
-class SaveFileAction() : EditorRelatedAction() {
+class SaveFileAction(context: Context, override val order: Int) : EditorRelatedAction() {
 
   private val log = ILogger.newInstance("SaveFileAction")
 
-  override val id: String = "editor_saveFile"
+  override val id: String = "ide.editor.files.saveAll"
 
-  constructor(context: Context) : this() {
+  override var requiresUIThread: Boolean = false
+
+  init {
     label = context.getString(R.string.save)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_save)
   }
 
   override fun prepare(data: ActionData) {
+    super.prepare(data)
+    val context = data.getActivity() ?: run {
+      visible = false
+      enabled = false
+      return
+    }
 
-    val context =
-      getActivity(data)
-        ?: run {
-          visible = false
-          enabled = false
-          return
-        }
-
-    visible = context.viewModel.openedFiles.isNotEmpty()
-    enabled = context.areFilesModified()
+    visible = context.editorViewModel.getOpenedFiles().isNotEmpty()
+    enabled = context.areFilesModified() && !context.areFilesSaving()
   }
 
-  override fun execAction(data: ActionData): Boolean {
-    val context = getActivity(data) ?: return false
+  override suspend fun execAction(data: ActionData): ResultWrapper {
+    val context = data.getActivity() ?: return ResultWrapper()
+
+    if (context.areFilesSaving()) {
+      return ResultWrapper(isAlreadySaving = true)
+    }
 
     return try {
       // Cannot use context.saveAll() because this.execAction is called on non-UI thread
       // and saveAll call will result in UI actions
-      val result = context.saveAllResult()
-
-      if (result.xmlSaved) {
-        ProjectManager.generateSources()
-      }
-
-      if (result.gradleSaved) {
-        context.notifySyncNeeded()
-      }
-      true
+      ResultWrapper(result = context.saveAllResult())
     } catch (error: Throwable) {
       log.error("Failed to save file", error)
-      false
+      ResultWrapper()
     }
   }
 
   override fun postExec(data: ActionData, result: Any) {
-    if (result is Boolean && result) {
-      toast(R.string.all_saved, Toaster.Type.SUCCESS)
+    if (result is ResultWrapper && result.result != null) {
+      val context = data.requireActivity()
+
+      if (result.isAlreadySaving) {
+        context.flashError(R.string.msg_files_being_saved)
+        return
+      }
+
+      // show save notification before calling 'notifySyncNeeded' so that the file save notification
+      // does not overlap the sync notification
+      context.flashSuccess(R.string.all_saved)
+
+      val saveResult = result.result
+      if (saveResult.xmlSaved) {
+        ProjectManagerImpl.getInstance().generateSources()
+      }
+
+      if (saveResult.gradleSaved) {
+        context.editorViewModel.isSyncNeeded = true
+      }
+
+      context.invalidateOptionsMenu()
     } else {
       log.error("Failed to save file")
-      TODO("Create message in strings.xml")
+      flashError(R.string.save_failed)
     }
   }
+
+  inner class ResultWrapper(val isAlreadySaving: Boolean = false, val result: SaveResult? = null)
 }

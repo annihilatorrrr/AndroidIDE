@@ -21,26 +21,19 @@ import android.content.Context
 import android.graphics.PorterDuff.Mode.SRC_ATOP
 import android.graphics.PorterDuffColorFilter
 import android.graphics.drawable.Drawable
-import android.graphics.drawable.LayerDrawable
-import androidx.core.content.ContextCompat.getColor
 import androidx.core.content.ContextCompat.getDrawable
-import com.blankj.utilcode.util.SizeUtils.dp2px
 import com.itsaky.androidide.uidesigner.R
+import com.itsaky.androidide.uidesigner.drawable.UiViewLayeredForeground
+import com.itsaky.androidide.utils.resolveAttr
 
 fun layeredForeground(context: Context, drawable: Drawable): Drawable {
-  return LayerDrawable(emptyArray()).apply {
-    val dp1 = dp2px(1f)
-    val index = addLayer(drawable)
-    setLayerInsetRelative(index, dp1, dp1, dp1, dp1)
-
-    bgDesignerView(context)?.let { addLayer(it) }
-  }
+  return UiViewLayeredForeground(context, drawable)
 }
 
 @JvmOverloads
 fun bgDesignerView(
   context: Context,
-  color: Int = getColor(context, R.color.primaryLightColor)
+  color: Int = context.resolveAttr(R.attr.colorOutline)
 ): Drawable? {
   return getDrawable(context, R.drawable.bg_designer_view)?.apply {
     colorFilter = PorterDuffColorFilter(color, SRC_ATOP)

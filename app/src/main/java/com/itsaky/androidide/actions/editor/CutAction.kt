@@ -22,9 +22,9 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.BaseEditorAction
 
 /** @author Akash Yadav */
-class CutAction() : BaseEditorAction() {
+class CutAction(context: Context, override val order: Int) : BaseEditorAction() {
 
-  constructor(context: Context) : this() {
+  init {
     label = context.getString(android.R.string.cut)
 
     val arr = context.obtainStyledAttributes(intArrayOf(android.R.attr.actionModeCutDrawable))
@@ -43,8 +43,8 @@ class CutAction() : BaseEditorAction() {
     enabled = visible
   }
 
-  override val id: String = "ideEditor_cut"
-  override fun execAction(data: ActionData): Boolean {
+  override val id: String = "ide.editor.code.text.cut"
+  override suspend fun execAction(data: ActionData): Boolean {
     val editor = getEditor(data) ?: return false
     editor.cutText()
     return true

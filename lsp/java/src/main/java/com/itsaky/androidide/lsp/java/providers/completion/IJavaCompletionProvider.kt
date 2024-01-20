@@ -22,6 +22,7 @@ import com.itsaky.androidide.lsp.api.describeSnippet
 import com.itsaky.androidide.lsp.java.compiler.CompileTask
 import com.itsaky.androidide.lsp.java.compiler.JavaCompilerService
 import com.itsaky.androidide.lsp.java.edits.ClassImportEditHandler
+import com.itsaky.androidide.lsp.java.models.JavaCompletionItem
 import com.itsaky.androidide.lsp.java.providers.BaseJavaServiceProvider
 import com.itsaky.androidide.lsp.java.utils.EditHelper
 import com.itsaky.androidide.lsp.models.ClassCompletionData
@@ -41,32 +42,34 @@ import com.itsaky.androidide.lsp.models.ICompletionData
 import com.itsaky.androidide.lsp.models.InsertTextFormat.SNIPPET
 import com.itsaky.androidide.lsp.models.MatchLevel
 import com.itsaky.androidide.lsp.models.MethodCompletionData
+import com.itsaky.androidide.lsp.snippets.ISnippet
+import com.itsaky.androidide.preferences.utils.indentationString
 import com.itsaky.androidide.progress.ProgressManager.Companion.abortIfCancelled
 import com.itsaky.androidide.utils.ILogger
-import com.sun.source.tree.Tree
-import com.sun.source.util.TreePath
 import java.nio.file.Path
-import javax.lang.model.element.Element
-import javax.lang.model.element.ElementKind.ANNOTATION_TYPE
-import javax.lang.model.element.ElementKind.CLASS
-import javax.lang.model.element.ElementKind.CONSTRUCTOR
-import javax.lang.model.element.ElementKind.ENUM
-import javax.lang.model.element.ElementKind.ENUM_CONSTANT
-import javax.lang.model.element.ElementKind.EXCEPTION_PARAMETER
-import javax.lang.model.element.ElementKind.FIELD
-import javax.lang.model.element.ElementKind.INSTANCE_INIT
-import javax.lang.model.element.ElementKind.INTERFACE
-import javax.lang.model.element.ElementKind.LOCAL_VARIABLE
-import javax.lang.model.element.ElementKind.METHOD
-import javax.lang.model.element.ElementKind.OTHER
-import javax.lang.model.element.ElementKind.PACKAGE
-import javax.lang.model.element.ElementKind.PARAMETER
-import javax.lang.model.element.ElementKind.RESOURCE_VARIABLE
-import javax.lang.model.element.ElementKind.STATIC_INIT
-import javax.lang.model.element.ElementKind.TYPE_PARAMETER
-import javax.lang.model.element.ExecutableElement
-import javax.lang.model.element.TypeElement
-import javax.lang.model.element.VariableElement
+import jdkx.lang.model.element.Element
+import jdkx.lang.model.element.ElementKind.ANNOTATION_TYPE
+import jdkx.lang.model.element.ElementKind.CLASS
+import jdkx.lang.model.element.ElementKind.CONSTRUCTOR
+import jdkx.lang.model.element.ElementKind.ENUM
+import jdkx.lang.model.element.ElementKind.ENUM_CONSTANT
+import jdkx.lang.model.element.ElementKind.EXCEPTION_PARAMETER
+import jdkx.lang.model.element.ElementKind.FIELD
+import jdkx.lang.model.element.ElementKind.INSTANCE_INIT
+import jdkx.lang.model.element.ElementKind.INTERFACE
+import jdkx.lang.model.element.ElementKind.LOCAL_VARIABLE
+import jdkx.lang.model.element.ElementKind.METHOD
+import jdkx.lang.model.element.ElementKind.OTHER
+import jdkx.lang.model.element.ElementKind.PACKAGE
+import jdkx.lang.model.element.ElementKind.PARAMETER
+import jdkx.lang.model.element.ElementKind.RESOURCE_VARIABLE
+import jdkx.lang.model.element.ElementKind.STATIC_INIT
+import jdkx.lang.model.element.ElementKind.TYPE_PARAMETER
+import jdkx.lang.model.element.ExecutableElement
+import jdkx.lang.model.element.TypeElement
+import jdkx.lang.model.element.VariableElement
+import openjdk.source.tree.Tree
+import openjdk.source.util.TreePath
 
 /**
  * Completion provider for Java source code.
@@ -83,7 +86,6 @@ abstract class IJavaCompletionProvider(
   protected lateinit var filePackage: String
   protected lateinit var fileImports: Set<String>
 
-  @Suppress("Since15")
   open fun complete(
     task: CompileTask,
     path: TreePath,
@@ -91,7 +93,7 @@ abstract class IJavaCompletionProvider(
     endsWithParen: Boolean,
   ): CompletionResult {
     val root = task.root(file)
-    filePackage = root.`package`.packageName.toString()
+    filePackage = root.`package`?.packageName?.toString() ?: ""
     fileImports = root.imports.map { it.qualifiedIdentifier.toString() }.toSet()
     abortIfCancelled()
     abortCompletionIfCancelled()
@@ -102,11 +104,11 @@ abstract class IJavaCompletionProvider(
    * Provide completions with the given data.
    *
    * @param task The compilation task. Subclasses are expected to use this compile task instead of
-   * starting another compilation process.
+   *   starting another compilation process.
    * @param path The [TreePath] defining the [Tree] at the current position.
    * @param partial The partial identifier.
    * @param endsWithParen `true` if the statement at cursor ends with a parenthesis. `false`
-   * otherwise.
+   *   otherwise.
    */
   protected abstract fun doComplete(
     task: CompileTask,
@@ -148,11 +150,11 @@ abstract class IJavaCompletionProvider(
   ): CompletionItem {
     abortIfCancelled()
     abortCompletionIfCancelled()
-    val item = CompletionItem()
-    item.setLabel(keyword)
-    item.kind = KEYWORD
+    val item = JavaCompletionItem()
+    item.ideLabel = keyword
+    item.completionKind = KEYWORD
     item.detail = "keyword"
-    item.sortText = keyword
+    item.ideSortText = keyword
     item.matchLevel = matchLevel
     return item
   }
@@ -167,11 +169,11 @@ abstract class IJavaCompletionProvider(
     abortIfCancelled()
     abortCompletionIfCancelled()
     val first = overloads[0]
-    val item = CompletionItem()
-    item.setLabel(first.simpleName.toString())
-    item.kind = CompletionItemKind.METHOD
+    val item = JavaCompletionItem()
+    item.ideLabel = first.simpleName.toString()
+    item.completionKind = CompletionItemKind.METHOD
     item.detail = printMethodDetail(first)
-    item.sortText = item.label.toString()
+    item.ideSortText = item.ideLabel
     item.matchLevel = matchLevel
     item.overrideTypeText = EditHelper.printType(first.returnType)
     val data = data(task, first, overloads.size)
@@ -186,8 +188,8 @@ abstract class IJavaCompletionProvider(
         item.insertText = first.simpleName.toString() + "($0)"
         item.command = Command("Trigger Parameter Hints", Command.TRIGGER_PARAMETER_HINTS)
       }
-      item.insertTextFormat = SNIPPET // Snippet
-      item.snippetDescription = describeSnippet(partial)
+      item.insertTextFormat = SNIPPET // DefaultSnippet
+      item.snippetDescription = describeSnippet(prefix = partial, allowCommandExecution = true)
     }
     return item
   }
@@ -218,12 +220,12 @@ abstract class IJavaCompletionProvider(
 
     abortIfCancelled()
     abortCompletionIfCancelled()
-    val item = CompletionItem()
-    item.setLabel(element.simpleName.toString())
-    item.kind = kind(element)
+    val item = JavaCompletionItem()
+    item.ideLabel = element.simpleName.toString()
+    item.completionKind = kind(element)
     item.detail = element.toString()
     item.data = data(task, element, 1)
-    item.sortText = item.label.toString()
+    item.ideSortText = item.ideLabel
     item.matchLevel = matchLevel
 
     if (element is VariableElement) {
@@ -248,11 +250,11 @@ abstract class IJavaCompletionProvider(
   ): CompletionItem {
     abortIfCancelled()
     abortCompletionIfCancelled()
-    val item = CompletionItem()
-    item.setLabel(simpleName(className).toString())
-    item.kind = CompletionItemKind.CLASS
+    val item = JavaCompletionItem()
+    item.ideLabel = simpleName(className).toString()
+    item.completionKind = CompletionItemKind.CLASS
     item.detail = packageName(className).toString()
-    item.sortText = item.label.toString()
+    item.ideSortText = item.ideLabel
     item.matchLevel = matchLevel
     item.data = ClassCompletionData(className)
 
@@ -281,13 +283,36 @@ abstract class IJavaCompletionProvider(
     if (packageName == name) {
       packageName = " "
     }
-    return CompletionItem().apply {
-      setLabel(simpleName)
+    return JavaCompletionItem().apply {
+      this.ideLabel = simpleName
       this.detail = packageName
       this.insertText = simpleName
-      this.kind = MODULE
-      this.sortText = name
+      this.completionKind = MODULE
+      this.ideSortText = name
       this.matchLevel = matchLevel
+    }
+  }
+
+  protected open fun snippetItem(
+    snippet: ISnippet,
+    matchLevel: MatchLevel,
+    partial: String,
+    indent: Int
+  ): CompletionItem {
+    return JavaCompletionItem().apply {
+      this.ideLabel = snippet.prefix
+      this.detail = snippet.description
+      this.completionKind = CompletionItemKind.SNIPPET
+      this.matchLevel = matchLevel
+      this.ideSortText = "00000${snippet.prefix}"
+      this.snippetDescription = describeSnippet(partial)
+
+      val indentation = indentationString(indent)
+      this.insertTextFormat = SNIPPET
+      this.insertText =
+        snippet.body.joinToString(separator = "\n").also {
+          it.replace("\t", indentationString).replace("\n", "\n${indentation}")
+        }
     }
   }
 
@@ -337,13 +362,13 @@ abstract class IJavaCompletionProvider(
     val parameterTypes = Array(element.parameters.size) { "" }
     val erasedParameterTypes = Array(parameterTypes.size) { "" }
     val plusOverloads = overloads - 1
-    
+
     for (i in element.parameters.indices) {
       val p = element.parameters[i].asType()
       parameterTypes[i] = p.toString()
       erasedParameterTypes[i] = types.erasure(p).toString()
     }
-    
+
     return MethodCompletionData(
       element.simpleName.toString(),
       getClassCompletionData(type),
@@ -373,11 +398,11 @@ abstract class IJavaCompletionProvider(
 
     var element: TypeElement? = this
     while (true) {
-      if (element?.enclosingElement?.kind == PACKAGE) {
+      if (element == null || element.enclosingElement?.kind == PACKAGE) {
         break
       }
 
-      element = element?.enclosingElement as? TypeElement
+      element = element.enclosingElement as? TypeElement
     }
 
     return element!!

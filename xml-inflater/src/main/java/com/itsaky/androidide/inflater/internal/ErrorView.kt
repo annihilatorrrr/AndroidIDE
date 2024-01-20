@@ -21,29 +21,36 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
-import com.android.aaptcompiler.XmlResource
-import com.itsaky.androidide.inflater.R
-import java.io.File
+import com.itsaky.androidide.resources.R
+import com.itsaky.androidide.utils.resolveAttr
 
 /**
  * View used to show views that cannot be inflated.
  *
  * @author Akash Yadav
  */
-class ErrorView(file: LayoutFile, context: Context, message: String) :
-  ViewImpl(file = file, name = NAME, view = createErrView(context, message)) {
-  companion object {
-    private val NAME = View::class.java.name
-  }
+class ErrorView(file: LayoutFile, name: String, context: Context, message: String) :
+  ViewImpl(file = file, name = name, view = createErrView(context, message)) {
+  override val tag: String = name
+}
+
+class ErrorLayout(file: LayoutFile, name: String, context: Context) :
+  ViewGroupImpl(file = file, name = name, view = createErrLayout(context)) {
+  override val tag: String = name
 }
 
 private fun createErrView(context: Context, message: String): View {
   return TextView(context).apply {
     text = message
     background = ColorDrawable(Color.WHITE)
-    setTextColor(ContextCompat.getColor(context, R.color.secondaryColor))
+    setTextColor(context.resolveAttr(R.attr.colorError))
     setTextIsSelectable(true)
   }
+}
+
+private fun createErrLayout(context: Context): ViewGroup {
+  return FrameLayout(context)
 }

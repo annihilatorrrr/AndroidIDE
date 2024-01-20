@@ -17,6 +17,7 @@
 
 package com.itsaky.androidide.lsp.java;
 
+import androidx.annotation.NonNull;
 import com.itsaky.androidide.lsp.java.compiler.JavaCompilerService;
 import com.itsaky.androidide.projects.api.ModuleProject;
 
@@ -35,6 +36,7 @@ public class JavaCompilerProvider {
 
   private JavaCompilerProvider() {}
 
+  @NonNull
   public static JavaCompilerService get(ModuleProject module) {
     return JavaCompilerProvider.getInstance().forModule(module);
   }
@@ -47,6 +49,7 @@ public class JavaCompilerProvider {
     return sInstance;
   }
 
+  @NonNull
   public synchronized JavaCompilerService forModule(ModuleProject module) {
     // A module instance is set to the compiler only in case the project is initialized or
     // this method was called with other mdoule instance.
@@ -64,7 +67,7 @@ public class JavaCompilerProvider {
   // TODO This currently destroys all the compiler instances
   //  We must have a method to destroy only the required instance in
   //  JavaLanguageServer.handleFailure(LSPFailure)
-  public synchronized void destory() {
+  public synchronized void destroy() {
     for (final JavaCompilerService compiler : mCompilers.values()) {
       compiler.destroy();
     }

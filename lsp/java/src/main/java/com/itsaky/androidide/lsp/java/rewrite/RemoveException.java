@@ -17,6 +17,7 @@
 
 package com.itsaky.androidide.lsp.java.rewrite;
 
+import androidx.annotation.NonNull;
 import com.itsaky.androidide.lsp.java.compiler.CompilerProvider;
 import com.itsaky.androidide.lsp.java.compiler.SynchronizedTask;
 import com.itsaky.androidide.lsp.java.utils.FindHelper;
@@ -24,14 +25,14 @@ import com.itsaky.androidide.models.Position;
 import com.itsaky.androidide.models.Range;
 import com.itsaky.androidide.lsp.models.TextEdit;
 import com.itsaky.androidide.utils.ILogger;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.LineMap;
-import com.sun.source.tree.MethodTree;
-import com.sun.source.util.JavacTask;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePath;
-import com.sun.source.util.Trees;
+import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.tree.ExpressionTree;
+import openjdk.source.tree.LineMap;
+import openjdk.source.tree.MethodTree;
+import openjdk.source.util.JavacTask;
+import openjdk.source.util.SourcePositions;
+import openjdk.source.util.TreePath;
+import openjdk.source.util.Trees;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,9 +41,9 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
+import jdkx.lang.model.element.ExecutableElement;
+import jdkx.lang.model.element.TypeElement;
+import jdkx.lang.model.type.DeclaredType;
 
 public class RemoveException extends Rewrite {
 
@@ -61,6 +62,7 @@ public class RemoveException extends Rewrite {
     this.exceptionType = exceptionType;
   }
 
+  @NonNull
   @Override
   public Map<Path, TextEdit[]> rewrite(CompilerProvider compiler) {
     Path file = compiler.findTypeDeclaration(className);
@@ -73,9 +75,17 @@ public class RemoveException extends Rewrite {
     SynchronizedTask synchronizedTask = compiler.compile(file);
     return synchronizedTask.get(
         task -> {
-          ExecutableElement methodElement =
+          final var methodElement =
               FindHelper.findMethod(task, className, methodName, erasedParameterTypes);
-          MethodTree methodTree = Trees.instance(task.task).getTree(methodElement);
+          if (methodElement == null) {
+            return CANCELLED;
+          }
+
+          final var methodTree = Trees.instance(task.task).getTree(methodElement);
+          if (methodTree == null) {
+            return CANCELLED;
+          }
+
           if (methodTree.getThrows().size() == 1) {
             TextEdit delete = removeEntireThrows(task.task, task.root(), methodTree);
             if (delete == TextEdit.NONE) {

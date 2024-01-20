@@ -18,23 +18,24 @@
 package com.itsaky.androidide.lsp.java.visitors;
 
 import com.itsaky.androidide.utils.ILogger;
-import com.sun.source.tree.AssignmentTree;
-import com.sun.source.tree.ClassTree;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.MemberSelectTree;
-import com.sun.source.tree.MethodInvocationTree;
-import com.sun.source.tree.VariableTree;
-import com.sun.source.util.JavacTask;
-import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
-import com.sun.source.util.Trees;
+import openjdk.source.tree.AssignmentTree;
+import openjdk.source.tree.ClassTree;
+import openjdk.source.tree.CompilationUnitTree;
+import openjdk.source.tree.MemberSelectTree;
+import openjdk.source.tree.MethodInvocationTree;
+import openjdk.source.tree.Tree;
+import openjdk.source.tree.VariableTree;
+import openjdk.source.util.JavacTask;
+import openjdk.source.util.SourcePositions;
+import openjdk.source.util.TreePath;
+import openjdk.source.util.TreePathScanner;
+import openjdk.source.util.Trees;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.NestingKind;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.TypeKind;
-import javax.lang.model.type.TypeMirror;
+import jdkx.lang.model.element.Element;
+import jdkx.lang.model.element.NestingKind;
+import jdkx.lang.model.element.TypeElement;
+import jdkx.lang.model.type.TypeKind;
+import jdkx.lang.model.type.TypeMirror;
 
 public class FindMethodCallAt extends TreePathScanner<MethodInvocationTree, Integer> {
   private static final ILogger LOG = ILogger.newInstance("main");
@@ -80,6 +81,15 @@ public class FindMethodCallAt extends TreePathScanner<MethodInvocationTree, Inte
 
   public boolean isStaticAccess() {
     return isStatic;
+  }
+
+  @Override
+  public MethodInvocationTree scan(Tree tree, Integer find) {
+    final var result = super.scan(tree, find);
+    if (result != null && result.getMethodSelect() instanceof MemberSelectTree) {
+      initProperties(((MemberSelectTree) result.getMethodSelect()), find);
+    }
+    return result;
   }
 
   @Override
@@ -130,11 +140,9 @@ public class FindMethodCallAt extends TreePathScanner<MethodInvocationTree, Inte
     }
 
     if (pos.getStartPosition(root, t) <= find && find < pos.getEndPosition(root, t)) {
-      if (t.getMethodSelect() instanceof MemberSelectTree) {
-        checkForQualifiedName((MemberSelectTree) t.getMethodSelect(), find);
-      }
       return t;
     }
+
     return null;
   }
 
@@ -170,7 +178,7 @@ public class FindMethodCallAt extends TreePathScanner<MethodInvocationTree, Inte
     return null;
   }
 
-  private void checkForQualifiedName(MemberSelectTree tree, Integer find) {
+  private void initProperties(MemberSelectTree tree, Integer find) {
     if (tree != null) {
       long start = pos.getStartPosition(root, tree);
       long end = pos.getEndPosition(root, tree);
@@ -178,7 +186,7 @@ public class FindMethodCallAt extends TreePathScanner<MethodInvocationTree, Inte
         Element element = trees.getElement(trees.getPath(root, tree));
 
         // Is this a static access?
-        isStatic = element instanceof TypeElement;
+        this.isStatic = element instanceof TypeElement;
 
         // Find enclosing element to get the TypeElement from which this method is being
         // called
@@ -194,27 +202,11 @@ public class FindMethodCallAt extends TreePathScanner<MethodInvocationTree, Inte
         // Will be needed in CreateMissingMethod.java for EditHelper
         this.enclosingTree = enclosingClass(this.enclosingTreePath);
 
-        isMemberSelect =
+        this.isMemberSelect =
             enclosingElement != null
                 && declaredInTopLevel != null
                 && enclosingTreePath != null
                 && enclosingTree != null;
-
-        LOG.info(
-            String.format(
-                "checkForQualifiedName\n"
-                    + "isStatic: %s\n"
-                    + "enclosingElement: %s\n"
-                    + "declaredInTopLevel: %s\n"
-                    + "enclosingTreePath: %s\n"
-                    + "enclosingTree: %s\n"
-                    + "isMemberSelect: %s",
-                "" + isStatic,
-                "" + enclosingElement,
-                "" + declaredInTopLevel,
-                "" + enclosingTreePath,
-                "" + enclosingTree,
-                "" + isMemberSelect));
       }
     }
   }

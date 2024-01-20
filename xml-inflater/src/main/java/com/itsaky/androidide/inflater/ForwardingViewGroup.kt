@@ -17,11 +17,9 @@
 
 package com.itsaky.androidide.inflater
 
-import com.itsaky.androidide.inflater.IViewGroup
-
 /**
  * An [IViewGroup] implementation that forwards all calls to [src].
  *
  * @author Akash Yadav
  */
-class ForwardingViewGroup(val src: IViewGroup) : IViewGroup by src
+open class ForwardingViewGroup(val src: IViewGroup) : IViewGroup by src

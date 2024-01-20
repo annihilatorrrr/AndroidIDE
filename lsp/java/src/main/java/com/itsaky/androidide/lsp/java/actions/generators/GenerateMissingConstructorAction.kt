@@ -27,12 +27,12 @@ import com.itsaky.androidide.lsp.java.actions.BaseJavaCodeAction
 import com.itsaky.androidide.lsp.java.models.DiagnosticCode
 import com.itsaky.androidide.lsp.java.rewrite.GenerateRecordConstructor
 import com.itsaky.androidide.lsp.java.utils.CodeActionUtils
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.projects.IProjectManager
 import com.itsaky.androidide.utils.ILogger
 
 /** @author Akash Yadav */
 class GenerateMissingConstructorAction : BaseJavaCodeAction() {
-  override val id = "lsp_java_generateMissingConstructor"
+  override val id = "ide.editor.lsp.java.generator.missingConstructor"
   override var label: String = ""
   private val diagnosticCode = DiagnosticCode.MISSING_CONSTRUCTOR.id
   private val log = ILogger.newInstance(javaClass.simpleName)
@@ -43,7 +43,7 @@ class GenerateMissingConstructorAction : BaseJavaCodeAction() {
 
     if (
       !visible ||
-        !hasRequiredData(data, com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)
+        !data.hasRequiredData( com.itsaky.androidide.lsp.models.DiagnosticItem::class.java)
     ) {
       markInvisible()
       return
@@ -56,11 +56,12 @@ class GenerateMissingConstructorAction : BaseJavaCodeAction() {
     }
   }
 
-  override fun execAction(data: ActionData): Any {
+  override suspend fun execAction(data: ActionData): Any {
     val diagnostic = data[com.itsaky.androidide.lsp.models.DiagnosticItem::class.java]!!
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return Any())
-    val file = requirePath(data)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return Any())
+    val file = data.requirePath()
     return compiler.compile(file).get { task ->
       val needsConstructor =
         CodeActionUtils.findClassNeedingConstructor(task, diagnostic.range) ?: return@get false

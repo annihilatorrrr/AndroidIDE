@@ -26,25 +26,25 @@ import com.itsaky.androidide.actions.ActionData
 import com.itsaky.androidide.actions.requireFile
 import com.itsaky.androidide.actions.requirePath
 import com.itsaky.androidide.lsp.java.JavaCompilerProvider
-import com.itsaky.androidide.resources.R.string
 import com.itsaky.androidide.lsp.java.actions.FieldBasedAction
 import com.itsaky.androidide.lsp.java.compiler.CompileTask
 import com.itsaky.androidide.lsp.java.utils.EditHelper
-import com.itsaky.androidide.projects.ProjectManager
+import com.itsaky.androidide.lsp.java.utils.ShortTypePrinter.NO_PACKAGE
+import com.itsaky.androidide.preferences.utils.indentationString
+import com.itsaky.androidide.projects.IProjectManager
+import com.itsaky.androidide.resources.R.string
 import com.itsaky.androidide.utils.ILogger
-import com.itsaky.toaster.Toaster.Type.ERROR
-import com.itsaky.toaster.toast
-import com.itsaky.toaster.toastLong
-import com.sun.source.tree.ClassTree
-import com.sun.source.tree.VariableTree
-import com.sun.source.util.TreePath
-import com.sun.tools.javac.api.JavacTrees
-import com.sun.tools.javac.code.Symbol.ClassSymbol
-import com.sun.tools.javac.code.Symbol.VarSymbol
-import com.sun.tools.javac.code.Type
-import com.sun.tools.javac.tree.JCTree
-import com.sun.tools.javac.tree.TreeInfo
-import com.sun.tools.javac.util.ListBuffer
+import com.itsaky.androidide.utils.flashError
+import openjdk.source.tree.ClassTree
+import openjdk.source.tree.VariableTree
+import openjdk.source.util.TreePath
+import openjdk.tools.javac.api.JavacTrees
+import openjdk.tools.javac.code.Symbol.ClassSymbol
+import openjdk.tools.javac.code.Symbol.VarSymbol
+import openjdk.tools.javac.code.Type
+import openjdk.tools.javac.tree.JCTree
+import openjdk.tools.javac.tree.TreeInfo
+import openjdk.tools.javac.util.ListBuffer
 import io.github.rosemoe.sora.widget.CodeEditor
 import java.util.concurrent.CompletableFuture
 
@@ -64,7 +64,7 @@ class GenerateConstructorAction : FieldBasedAction() {
         .whenComplete { _, error ->
           if (error != null) {
             log.error("Unable to generate constructor for the selected fields", error)
-            toast(string.msg_cannot_generate_constructor, ERROR)
+            flashError(string.msg_cannot_generate_constructor)
           }
         }
     }
@@ -72,9 +72,10 @@ class GenerateConstructorAction : FieldBasedAction() {
 
   private fun generateConstructor(data: ActionData, selected: MutableSet<String>) {
     val compiler =
-      JavaCompilerProvider.get(ProjectManager.findModuleForFile(requireFile(data)) ?: return)
+      JavaCompilerProvider.get(
+        IProjectManager.getInstance().findModuleForFile(data.requireFile(), false) ?: return)
     val range = data[com.itsaky.androidide.models.Range::class.java]!!
-    val file = requirePath(data)
+    val file = data.requirePath()
 
     compiler.compile(file).run { task ->
       val triple = findFields(task, file, range)
@@ -106,7 +107,7 @@ class GenerateConstructorAction : FieldBasedAction() {
       log.warn(
         "A constructor with same parameter types is already available in class ${type.simpleName}"
       )
-      toastLong(data[Context::class.java]!!.getString(string.msg_constructor_available), ERROR)
+      flashError(data[Context::class.java]!!.getString(string.msg_constructor_available))
       return
     }
 
@@ -124,7 +125,7 @@ class GenerateConstructorAction : FieldBasedAction() {
     val insertAt = EditHelper.insertAfter(task.task, task.root(), paths.last().leaf)
     val indent = EditHelper.indent(task.task, task.root(), paths.last().leaf)
     var text = constructor.toString()
-    text = text.replace("\n", "\n${EditHelper.repeatSpaces(indent)}")
+    text = text.replace("\n", "\n${indentationString(indent)}")
     text += "\n"
 
     ThreadUtils.runOnUiThread {
@@ -147,13 +148,13 @@ class GenerateConstructorAction : FieldBasedAction() {
       val paramType = paramTypes[i]
       val paramName = paramNames[i]
 
-      constructor.addParameter(paramType.tsym.simpleName.toString(), paramName)
+      constructor.addParameter(NO_PACKAGE.print(paramType), paramName)
     }
 
     return constructor
   }
 
-  private fun mapTypes(paths: List<TreePath>): com.sun.tools.javac.util.List<Type> {
+  private fun mapTypes(paths: List<TreePath>): openjdk.tools.javac.util.List<Type> {
     val buffer = ListBuffer<Type>()
     for (path in paths) {
       val leaf = path.leaf
@@ -165,7 +166,7 @@ class GenerateConstructorAction : FieldBasedAction() {
   }
 
   override val titleTextRes: Int = string.action_generate_constructor
-  override val id: String = "lsp_java_generateConstructor"
+  override val id: String = "ide.editor.lsp.java.generator.constructor"
   override var label: String = ""
   private val log = ILogger.newInstance(javaClass.simpleName)
 }

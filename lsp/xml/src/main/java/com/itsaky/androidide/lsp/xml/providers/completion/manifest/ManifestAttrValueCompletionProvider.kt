@@ -95,7 +95,7 @@ class ManifestAttrValueCompletionProvider(provider: ICompletionProvider) :
       item.overrideTypeText = "Permission"
 
       // Show API information
-      item.kind = FIELD
+      item.completionKind = FIELD
       item.data =
         FieldCompletionData(
           memberName = value.name,
@@ -186,12 +186,15 @@ class ManifestAttrValueCompletionProvider(provider: ICompletionProvider) :
   }
 
   private fun getModule(): ModuleProject {
-    return Lookup.DEFAULT.lookup(ModuleProject.COMPLETION_MODULE_KEY)
+    return Lookup.getDefault().lookup(ModuleProject.COMPLETION_MODULE_KEY)
       ?: throw IllegalStateException("No module project provided")
   }
 
-  override fun findResourceTables(nsUri: String): Set<ResourceTable> {
+  override fun findResourceTables(nsUri: String?): Set<ResourceTable> {
     val tables = manifestResourceTable().toMutableSet()
+    if (nsUri.isNullOrBlank()) {
+      return tables
+    }
     tables.addAll(super.findResourceTables(nsUri))
     log.info("Found ${tables.size} resource tables for namespace: $nsUri")
     return tables

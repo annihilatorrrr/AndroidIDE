@@ -17,13 +17,14 @@
 
 package com.itsaky.androidide.progress
 
-import com.itsaky.androidide.progress.ICancelChecker.Companion.Default
+import com.itsaky.androidide.progress.ICancelChecker.Default
 import java.util.WeakHashMap
+import java.util.concurrent.CancellationException
 
 /**
  * @author Akash Yadav
  */
-class ProgressManager private constructor(){
+class ProgressManager private constructor() {
 
   private val threads = WeakHashMap<Thread, ICancelChecker>()
 
@@ -50,9 +51,11 @@ class ProgressManager private constructor(){
 
   @JvmName("internalAbortIfCancelled")
   private fun abortIfCancelled() {
-    val checker = threads.remove(Thread.currentThread())
+    val thisThread = Thread.currentThread()
+    val checker = threads[thisThread]
     if (checker != null && checker.isCancelled()) {
-      throw ProcessCancelledException()
+      threads.remove(thisThread)
+      throw CancellationException()
     }
   }
 }

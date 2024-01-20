@@ -18,10 +18,7 @@
 package com.itsaky.androidide.lsp.xml.edits
 
 import com.itsaky.androidide.lsp.edits.DefaultEditHandler
-import com.itsaky.androidide.lsp.edits.IEditHandler
 import com.itsaky.androidide.lsp.models.CompletionItem
-import io.github.rosemoe.sora.text.Content
-import io.github.rosemoe.sora.widget.CodeEditor
 
 /**
  * Handles edits for attribute values with qualified binary names. The default implementation in
@@ -30,7 +27,7 @@ import io.github.rosemoe.sora.widget.CodeEditor
  * @author Akash Yadav
  */
 open class QualifiedValueEditHandler : DefaultEditHandler() {
-  
+
   override fun isPartialPart(c: Char): Boolean {
     return super.isPartialPart(c) || c == '.' // Tags can contain '.' as well
   }
